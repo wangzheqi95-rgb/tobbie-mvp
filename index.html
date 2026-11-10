@@ -14,7 +14,8 @@
   header { padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   h1 { font-size: 17px; margin: 0; }
   #state { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--panel); white-space: nowrap; }
-  #stage { position: relative; width: 100%; background: #000; aspect-ratio: 3 / 4; overflow: hidden; }
+  #stage { position: relative; width: 100%; background: #000; aspect-ratio: 3 / 4; max-height: 60vh; overflow: hidden; }
+  #stage.mirror video, #stage.mirror canvas { transform: scaleX(-1); }
   #stage video, #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
   #info { position: absolute; left: 8px; bottom: 8px; right: 8px; font-size: 13px; background: rgba(0,0,0,.55); padding: 6px 8px; border-radius: 8px; }
   #alarm { position: absolute; inset: 0; display: none; background: rgba(234,67,53,.88); color: #fff;
@@ -59,6 +60,7 @@
   <div class="row">
     <button class="primary" id="btnStart">啟動系統</button>
     <button id="btnConnect">連線 Tobbie</button>
+    <button id="btnFlip" disabled>切換鏡頭</button>
   </div>
   <div class="muted" id="robotStatus" style="margin-top:8px;font-size:13px;">Tobbie：未連線</div>
 </div>
@@ -89,6 +91,7 @@
   <label>轉向時間（毫秒）<input type="number" id="cfgTurn" value="800" step="100" min="100"></label>
   <label>躺平持續幾秒才確認<input type="number" id="cfgConfirm" value="3" step="0.5" min="1"></label>
   <label><input type="checkbox" id="cfgFast" checked> 必須是「快速倒下」才算跌倒（慢慢躺下不算）</label>
+  <label><input type="checkbox" id="cfgSwap"> Tobbie 左右對調（轉錯方向時勾選）</label>
 </div>
 
 <div class="panel">
@@ -256,7 +259,8 @@ const robot = {
 
 async function turnToward(px) {
   // px：人在畫面中的水平位置，0 = 最左、1 = 最右
-  const dir = px < 0.4 ? "L" : px > 0.6 ? "R" : null;
+  let dir = px < 0.4 ? "L" : px > 0.6 ? "R" : null;
+  if (dir && $("cfgSwap").checked) dir = dir === "L" ? "R" : "L";
   if (dir) {
     log(`Tobbie ${dir === "L" ? "左" : "右"}轉面向長者`);
     await robot.send(dir);
@@ -401,6 +405,31 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
+// ===================== 切換前／後鏡頭 =====================
+let facing = "environment"; // environment = 後鏡頭，user = 前鏡頭
+async function startCamera(mode) {
+  // 先關掉目前的鏡頭
+  if (video.srcObject) video.srcObject.getTracks().forEach((t) => t.stop());
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: mode }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false,
+  });
+  video.srcObject = stream;
+  await video.play();
+  facing = mode;
+  lastVideoTime = -1;
+  // 前鏡頭用鏡像顯示，比較直覺；只影響畫面，不影響跌倒判斷
+  $("stage").classList.toggle("mirror", mode === "user");
+}
+$("btnFlip").onclick = async () => {
+  const next = facing === "environment" ? "user" : "environment";
+  try {
+    await startCamera(next);
+    log(`已切換到${next === "user" ? "前" : "後"}鏡頭`);
+  } catch (e) {
+    log(`切換鏡頭失敗：${e.message}`);
+  }
+};
+
 $("btnStart").onclick = async () => {
   $("btnStart").disabled = true;
   try {
@@ -408,10 +437,7 @@ $("btnStart").onclick = async () => {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     pickVoice();
     $("info").textContent = "開啟鏡頭中…";
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false,
-    });
-    video.srcObject = stream; await video.play();
+    await startCamera("environment");
     // 先要麥克風權限，之後聆聽時就不會卡住
     try { const mic = await navigator.mediaDevices.getUserMedia({ audio: true }); mic.getTracks().forEach((t) => t.stop()); }
     catch (e) { log("麥克風權限被拒絕，聆聽功能無法使用"); }
@@ -420,6 +446,7 @@ $("btnStart").onclick = async () => {
     $("info").textContent = "載入姿勢辨識模型中（第一次約 10–30 秒）…";
     await loadModel();
     setState("MONITOR");
+    $("btnFlip").disabled = false;
     log("系統啟動，開始監測");
     speak("系統已啟動。");
     requestAnimationFrame(loop);
