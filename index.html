@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>居家照護機器人 MVP</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #1a1d24; --line: #2a2f3a; --text: #e8eaed; --muted: #9aa0a6;
+    --accent: #4f8cff; --ok: #34a853; --warn: #f9ab00; --bad: #ea4335;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  h1 { font-size: 17px; margin: 0; }
+  #state { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--panel); white-space: nowrap; }
+  #stage { position: relative; width: 100%; background: #000; aspect-ratio: 3 / 4; overflow: hidden; }
+  #stage video, #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  #info { position: absolute; left: 8px; bottom: 8px; right: 8px; font-size: 13px; background: rgba(0,0,0,.55); padding: 6px 8px; border-radius: 8px; }
+  #alarm { position: absolute; inset: 0; display: none; background: rgba(234,67,53,.88); color: #fff;
+           align-items: center; justify-content: center; flex-direction: column; text-align: center; gap: 12px; padding: 16px; }
+  #alarm.show { display: flex; }
+  #alarm .big { font-size: 26px; font-weight: 700; }
+  .panel { background: var(--panel); margin: 12px 16px; border-radius: 12px; padding: 12px; }
+  .panel h2 { font-size: 14px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { flex: 1 1 30%; min-height: 44px; border: 0; border-radius: 10px; background: var(--line); color: var(--text); font-size: 15px; }
+  button.primary { background: var(--accent); color: #fff; }
+  button.danger { background: var(--bad); color: #fff; }
+  button:disabled { opacity: .45; }
+  label { font-size: 14px; display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  input[type=number] { width: 80px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font-size: 14px; }
+  #log { font-size: 13px; line-height: 1.5; max-height: 260px; overflow-y: auto; }
+  #log div { border-bottom: 1px solid var(--line); padding: 4px 0; }
+  #log img { width: 120px; border-radius: 6px; display: block; margin-top: 4px; }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>居家照護機器人 MVP</h1>
+  <span id="state">未啟動</span>
+</header>
+
+<div id="stage">
+  <video id="video" playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div id="info">按下「啟動系統」開始</div>
+  <div id="alarm">
+    <div class="big">⚠ 偵測到跌倒</div>
+    <div>已通報家屬（模擬）</div>
+    <div id="alarmTime"></div>
+    <button class="primary" id="btnClear" style="flex:0 0 auto; padding:0 24px;">解除警報</button>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>系統</h2>
+  <div class="row">
+    <button class="primary" id="btnStart">啟動系統</button>
+    <button id="btnConnect">連線 Tobbie</button>
+  </div>
+  <div class="muted" id="robotStatus" style="margin-top:8px;font-size:13px;">Tobbie：未連線</div>
+</div>
+
+<div class="panel">
+  <h2>測試</h2>
+  <div class="row">
+    <button id="btnFake">模擬跌倒</button>
+    <button id="btnSpeak">測試說話</button>
+    <button id="btnListen">測試聆聽</button>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Tobbie 手動控制</h2>
+  <div class="row">
+    <button data-cmd="L">左轉</button>
+    <button data-cmd="S">停止</button>
+    <button data-cmd="R">右轉</button>
+    <button data-cmd="H">搖頭</button>
+    <button data-cmd="A">警示臉</button>
+    <button data-cmd="N">正常臉</button>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>設定</h2>
+  <label>轉向時間（毫秒）<input type="number" id="cfgTurn" value="800" step="100" min="100"></label>
+  <label>躺平持續幾秒才確認<input type="number" id="cfgConfirm" value="3" step="0.5" min="1"></label>
+  <label><input type="checkbox" id="cfgFast" checked> 必須是「快速倒下」才算跌倒（慢慢躺下不算）</label>
+</div>
+
+<div class="panel">
+  <h2>事件紀錄</h2>
+  <div id="log"></div>
+</div>
+
+<script type="module">
+import { PoseLandmarker, FilesetResolver, DrawingUtils }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+// ===================== 參數 =====================
+const CFG = {
+  UPRIGHT_DEG: 35,      // 身體與垂直線夾角 < 35° → 直立（站或坐）
+  LYING_DEG: 60,        // 夾角 > 60° → 躺平
+  FAST_FALL_SEC: 2.0,   // 從直立變躺平要在 2 秒內完成，才算「跌倒」
+  MIN_VIS: 0.5,         // 關節點可見度門檻
+  LISTEN_SEC: 8,        // 每次聆聽幾秒
+  ASK_TIMES: 2,         // 最多問幾次
+  COOLDOWN_SEC: 15,     // 取消或解除後，幾秒內不再觸發
+};
+const OK_WORDS = ["沒事", "我很好", "還好", "不用", "沒關係", "我沒事", "OK", "ok"];
+const HELP_WORDS = ["救命", "幫忙", "幫我", "好痛", "很痛", "不好", "起不來", "救護車"];
+
+// ===================== 畫面元件 =====================
+const $ = (id) => document.getElementById(id);
+const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
+const draw = new DrawingUtils(ctx);
+
+// ===================== 狀態機 =====================
+// MONITOR 監測中 → SUSPECT 疑似跌倒 → ASK 詢問中 → ALARM 警報 / 取消後回到 MONITOR
+let state = "IDLE";
+const STATE_LABEL = { IDLE: "未啟動", MONITOR: "監測中", SUSPECT: "疑似跌倒", ASK: "詢問中", ALARM: "警報中", COOLDOWN: "冷卻中" };
+function setState(s) {
+  state = s;
+  const el = $("state");
+  el.textContent = STATE_LABEL[s] || s;
+  el.style.background = s === "ALARM" ? "var(--bad)" : s === "ASK" || s === "SUSPECT" ? "var(--warn)" : s === "MONITOR" ? "var(--ok)" : "var(--panel)";
+  el.style.color = s === "MONITOR" || s === "ALARM" ? "#fff" : s === "ASK" || s === "SUSPECT" ? "#000" : "var(--text)";
+}
+
+// ===================== 事件紀錄 =====================
+function log(msg, imgUrl) {
+  const d = document.createElement("div");
+  const t = new Date().toLocaleTimeString("zh-TW", { hour12: false });
+  d.textContent = `${t}　${msg}`;
+  if (imgUrl) { const img = new Image(); img.src = imgUrl; d.appendChild(img); }
+  $("log").prepend(d);
+}
+function snapshot() {
+  const c = document.createElement("canvas");
+  c.width = 320; c.height = Math.round(320 * (video.videoHeight / video.videoWidth || 0.75));
+  c.getContext("2d").drawImage(video, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.7);
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ===================== 說話（TTS）=====================
+let zhVoice = null;
+function pickVoice() {
+  const vs = speechSynthesis.getVoices();
+  zhVoice = vs.find((v) => v.lang === "zh-TW") || vs.find((v) => v.lang.startsWith("zh")) || null;
+}
+speechSynthesis.onvoiceschanged = pickVoice;
+function speak(text) {
+  return new Promise((resolve) => {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "zh-TW"; u.rate = 0.95;
+    if (zhVoice) u.voice = zhVoice;
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    u.onend = finish; u.onerror = finish;
+    speechSynthesis.speak(u);
+    setTimeout(finish, 10000); // 保險：最多等 10 秒
+  });
+}
+
+// ===================== 聆聽（語音辨識 STT）=====================
+function classify(text) {
+  if (!text) return "none";
+  if (HELP_WORDS.some((w) => text.includes(w)) && !text.includes("不用")) return "help";
+  if (OK_WORDS.some((w) => text.includes(w))) return "ok";
+  if (HELP_WORDS.some((w) => text.includes(w))) return "help";
+  return "none";
+}
+function listen(sec) {
+  return new Promise((resolve) => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { log("此瀏覽器不支援語音辨識"); resolve({ kind: "none", text: "" }); return; }
+    const rec = new SR();
+    rec.lang = "zh-TW"; rec.interimResults = true; rec.continuous = true;
+    let text = "", done = false;
+    const endAt = Date.now() + sec * 1000;
+    const finish = (kind) => {
+      if (done) return; done = true; clearTimeout(timer);
+      try { rec.stop(); } catch (e) {}
+      resolve({ kind, text });
+    };
+    rec.onresult = (e) => {
+      text = Array.from(e.results).map((r) => r[0].transcript).join("");
+      $("info").textContent = `聽到：${text}`;
+      const k = classify(text);
+      if (k !== "none") finish(k);
+    };
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") { log("麥克風權限被拒絕"); finish("none"); }
+    };
+    rec.onend = () => { // Android 常會提早結束，時間還沒到就重開
+      if (!done && Date.now() < endAt - 500) { try { rec.start(); } catch (e) {} }
+    };
+    const timer = setTimeout(() => finish(classify(text)), sec * 1000);
+    try { rec.start(); } catch (e) { finish("none"); }
+  });
+}
+
+// ===================== 警報聲 =====================
+let audioCtx = null, beepTimer = null;
+function startBeep() {
+  if (!audioCtx) return;
+  let hi = true;
+  const play = () => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = hi ? 880 : 660; hi = !hi;
+    g.gain.value = 0.25;
+    o.connect(g).connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.35);
+  };
+  play(); beepTimer = setInterval(play, 450);
+}
+function stopBeep() { clearInterval(beepTimer); beepTimer = null; }
+
+// ===================== Tobbie 藍牙（BLE UART）=====================
+const UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const robot = {
+  rx: null, queue: Promise.resolve(),
+  async connect() {
+    if (!navigator.bluetooth) { alert("此瀏覽器不支援 Web Bluetooth，請用 Android 的 Chrome。"); return; }
+    const dev = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "BBC micro:bit" }], optionalServices: [UART_SERVICE],
+    });
+    dev.addEventListener("gattserverdisconnected", () => {
+      this.rx = null; $("robotStatus").textContent = "Tobbie：已斷線"; log("Tobbie 藍牙已斷線");
+    });
+    const server = await dev.gatt.connect();
+    const svc = await server.getPrimaryService(UART_SERVICE);
+    const chars = await svc.getCharacteristics();
+    // 找「可寫入」的那個特徵值（手機 → micro:bit）
+    this.rx = chars.find((c) => c.properties.write || c.properties.writeWithoutResponse) || null;
+    if (!this.rx) throw new Error("找不到可寫入的 UART 特徵值");
+    $("robotStatus").textContent = `Tobbie：已連線（${dev.name}）`;
+    log("Tobbie 藍牙已連線");
+  },
+  send(cmd) {
+    if (!this.rx) { log(`Tobbie 未連線，略過指令 ${cmd}`); return Promise.resolve(); }
+    const data = new TextEncoder().encode(cmd + "#");
+    const ch = this.rx;
+    // 指令排隊，避免藍牙同時寫入出錯
+    this.queue = this.queue
+      .then(() => ch.properties.write ? ch.writeValueWithResponse(data) : ch.writeValueWithoutResponse(data))
+      .catch((e) => log(`傳送 ${cmd} 失敗：${e.message}`));
+    return this.queue;
+  },
+};
+
+async function turnToward(px) {
+  // px：人在畫面中的水平位置，0 = 最左、1 = 最右
+  const dir = px < 0.4 ? "L" : px > 0.6 ? "R" : null;
+  if (dir) {
+    log(`Tobbie ${dir === "L" ? "左" : "右"}轉面向長者`);
+    await robot.send(dir);
+    await sleep(Number($("cfgTurn").value) || 800);
+    await robot.send("S");
+  }
+  await robot.send("H");
+}
+
+// ===================== 跌倒流程 =====================
+let cooldownUntil = 0;
+async function onFall(px) {
+  if (state === "ASK" || state === "ALARM") return;
+  setState("ASK");
+  log("偵測到疑似跌倒", snapshot());
+  robot.send("A");
+  const prompts = ["您還好嗎？需要幫忙嗎？", "請問您還好嗎？請回答我。"];
+  for (let i = 0; i < CFG.ASK_TIMES; i++) {
+    $("info").textContent = `詢問中（第 ${i + 1} 次）`;
+    await speak(prompts[i] || prompts[1]);
+    $("info").textContent = "聆聽中…";
+    const ans = await listen(CFG.LISTEN_SEC);
+    log(`第 ${i + 1} 次回應：「${ans.text || "（沒有回應）"}」→ ${ans.kind === "ok" ? "沒事" : ans.kind === "help" ? "求救" : "無法判斷"}`);
+    if (ans.kind === "ok") {
+      await speak("好的，請小心慢慢起來。");
+      robot.send("N");
+      log("長者表示沒事，取消警報");
+      startCooldown();
+      return;
+    }
+    if (ans.kind === "help") break;
+  }
+  raiseAlarm(px);
+}
+
+async function raiseAlarm(px) {
+  setState("ALARM");
+  $("alarmTime").textContent = new Date().toLocaleString("zh-TW", { hour12: false });
+  $("alarm").classList.add("show");
+  log("警報：已通報家屬（模擬）", snapshot());
+  startBeep();
+  turnToward(px);
+  await speak("已經通知您的家人，請不要移動，救援馬上就到。");
+}
+
+function startCooldown() {
+  setState("COOLDOWN");
+  cooldownUntil = performance.now() + CFG.COOLDOWN_SEC * 1000;
+  resetDetector();
+  setTimeout(() => { if (state === "COOLDOWN") setState("MONITOR"); }, CFG.COOLDOWN_SEC * 1000);
+}
+
+$("btnClear").onclick = () => {
+  $("alarm").classList.remove("show");
+  stopBeep(); speechSynthesis.cancel();
+  robot.send("S"); robot.send("N");
+  log("警報已解除");
+  startCooldown();
+};
+
+// ===================== 跌倒判斷 =====================
+// 白話：看「肩膀中點」到「髖部中點」這條線（軀幹）跟垂直線的夾角。
+// 站或坐時接近 0°；躺平時接近 90°。從直立快速變成躺平，並且躺著超過幾秒沒起來 → 判定跌倒。
+let lastUprightT = 0, lyingSince = null, fastFall = false;
+function resetDetector() { lastUprightT = 0; lyingSince = null; fastFall = false; }
+const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+function analyze(lm, now) {
+  const idx = [11, 12, 23, 24]; // 左右肩、左右髖
+  if (idx.some((i) => (lm[i].visibility ?? 1) < CFG.MIN_VIS)) {
+    $("info").textContent = "看不清楚肩膀或髖部，請讓全身入鏡";
+    return;
+  }
+  const sh = mid(lm[11], lm[12]), hp = mid(lm[23], lm[24]);
+  const aspect = (video.videoWidth || 4) / (video.videoHeight || 3);
+  const dx = (sh.x - hp.x) * aspect, dy = hp.y - sh.y;
+  const deg = Math.atan2(Math.abs(dx), Math.abs(dy)) * 180 / Math.PI;
+
+  if (state !== "MONITOR" && state !== "SUSPECT") {
+    $("info").textContent = `軀幹角度 ${deg.toFixed(0)}°`;
+    return;
+  }
+  if (deg < CFG.UPRIGHT_DEG) {
+    lastUprightT = now; lyingSince = null; fastFall = false;
+    if (state === "SUSPECT") setState("MONITOR");
+    $("info").textContent = `直立（軀幹角度 ${deg.toFixed(0)}°）`;
+  } else if (deg > CFG.LYING_DEG) {
+    if (lyingSince === null) {
+      lyingSince = now;
+      fastFall = lastUprightT > 0 && (now - lastUprightT) <= CFG.FAST_FALL_SEC * 1000;
+    }
+    const needFast = $("cfgFast").checked;
+    if (needFast && !fastFall) {
+      $("info").textContent = `躺平，但不是快速倒下（軀幹角度 ${deg.toFixed(0)}°）`;
+      return;
+    }
+    setState("SUSPECT");
+    const held = (now - lyingSince) / 1000;
+    const need = Number($("cfgConfirm").value) || 3;
+    $("info").textContent = `疑似跌倒，確認中 ${held.toFixed(1)} / ${need} 秒`;
+    if (held >= need && now > cooldownUntil) {
+      lyingSince = null; fastFall = false;
+      onFall(hp.x);
+    }
+  } else {
+    $("info").textContent = `傾斜中（軀幹角度 ${deg.toFixed(0)}°）`;
+  }
+}
+
+// ===================== 鏡頭與模型 =====================
+let landmarker = null, lastVideoTime = -1;
+async function loadModel() {
+  const fileset = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  const opts = (delegate) => ({
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+      delegate,
+    },
+    runningMode: "VIDEO", numPoses: 1,
+  });
+  try { landmarker = await PoseLandmarker.createFromOptions(fileset, opts("GPU")); }
+  catch (e) { log("GPU 載入失敗，改用 CPU"); landmarker = await PoseLandmarker.createFromOptions(fileset, opts("CPU")); }
+}
+
+function loop() {
+  if (landmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    const now = performance.now();
+    const res = landmarker.detectForVideo(video, now);
+    if (canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (res.landmarks && res.landmarks[0]) {
+      const lm = res.landmarks[0];
+      draw.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: "#4f8cff", lineWidth: 3 });
+      draw.drawLandmarks(lm, { color: "#ffffff", radius: 3 });
+      analyze(lm, now);
+    } else if (state === "MONITOR") {
+      $("info").textContent = "畫面中沒有偵測到人";
+    }
+  }
+  requestAnimationFrame(loop);
+}
+
+$("btnStart").onclick = async () => {
+  $("btnStart").disabled = true;
+  try {
+    // 在使用者點擊時解鎖聲音
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    pickVoice();
+    $("info").textContent = "開啟鏡頭中…";
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false,
+    });
+    video.srcObject = stream; await video.play();
+    // 先要麥克風權限，之後聆聽時就不會卡住
+    try { const mic = await navigator.mediaDevices.getUserMedia({ audio: true }); mic.getTracks().forEach((t) => t.stop()); }
+    catch (e) { log("麥克風權限被拒絕，聆聽功能無法使用"); }
+    // 讓螢幕保持常亮
+    try { await navigator.wakeLock?.request("screen"); } catch (e) {}
+    $("info").textContent = "載入姿勢辨識模型中（第一次約 10–30 秒）…";
+    await loadModel();
+    setState("MONITOR");
+    log("系統啟動，開始監測");
+    speak("系統已啟動。");
+    requestAnimationFrame(loop);
+  } catch (e) {
+    log(`啟動失敗：${e.message}`);
+    $("info").textContent = `啟動失敗：${e.message}`;
+    $("btnStart").disabled = false;
+  }
+};
+
+$("btnConnect").onclick = async () => {
+  try { await robot.connect(); } catch (e) { log(`Tobbie 連線失敗：${e.message}`); }
+};
+$("btnFake").onclick = () => {
+  if (state === "IDLE") { alert("請先啟動系統"); return; }
+  log("（測試）手動觸發模擬跌倒");
+  onFall(0.2);
+};
+$("btnSpeak").onclick = () => speak("您好，我是照護機器人。您還好嗎？");
+$("btnListen").onclick = async () => {
+  await speak("請說話。");
+  const r = await listen(6);
+  log(`測試聆聽：「${r.text || "（沒有聽到）"}」→ ${r.kind}`);
+};
+document.querySelectorAll("button[data-cmd]").forEach((b) => {
+  b.onclick = () => robot.send(b.dataset.cmd);
+});
+</script>
+</body>
+</html>
