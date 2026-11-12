@@ -7,7 +7,7 @@
 <style>
   :root {
     --bg: #0f1115; --panel: #1a1d24; --line: #2a2f3a; --text: #e8eaed; --muted: #9aa0a6;
-    --accent: #4f8cff; --ok: #34a853; --warn: #f9ab00; --bad: #ea4335;
+    --accent: #4f8cff; --ok: #34a853; --warn: #f9ab00; --bad: #ea4335; --chat: #a142f4;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif; background: var(--bg); color: var(--text); }
@@ -15,9 +15,11 @@
   h1 { font-size: 17px; margin: 0; }
   #state { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--panel); white-space: nowrap; }
   #stage { position: relative; width: 100%; background: #000; aspect-ratio: 3 / 4; max-height: 60vh; overflow: hidden; }
-  #stage.mirror video, #stage.mirror canvas { transform: scaleX(-1); }
   #stage video, #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-  #info { position: absolute; left: 8px; bottom: 8px; right: 8px; font-size: 13px; background: rgba(0,0,0,.55); padding: 6px 8px; border-radius: 8px; }
+  #stage.mirror video, #stage.mirror canvas { transform: scaleX(-1); }
+  #info { position: absolute; left: 8px; bottom: 8px; right: 8px; font-size: 13px; background: rgba(0,0,0,.6); padding: 6px 8px; border-radius: 8px; }
+  #bubble { position: absolute; left: 8px; right: 8px; top: 8px; font-size: 16px; background: rgba(161,66,244,.88); padding: 8px 10px; border-radius: 10px; display: none; }
+  #bubble.show { display: block; }
   #alarm { position: absolute; inset: 0; display: none; background: rgba(234,67,53,.88); color: #fff;
            align-items: center; justify-content: center; flex-direction: column; text-align: center; gap: 12px; padding: 16px; }
   #alarm.show { display: flex; }
@@ -27,11 +29,15 @@
   .row { display: flex; flex-wrap: wrap; gap: 8px; }
   button { flex: 1 1 30%; min-height: 44px; border: 0; border-radius: 10px; background: var(--line); color: var(--text); font-size: 15px; }
   button.primary { background: var(--accent); color: #fff; }
-  button.danger { background: var(--bad); color: #fff; }
   button:disabled { opacity: .45; }
-  label { font-size: 14px; display: flex; align-items: center; gap: 8px; margin: 6px 0; }
-  input[type=number] { width: 80px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font-size: 14px; }
-  #log { font-size: 13px; line-height: 1.5; max-height: 260px; overflow-y: auto; }
+  label { font-size: 14px; display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+  input[type=number], input[type=text], input[type=password] {
+    background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 14px; }
+  input[type=number] { width: 80px; }
+  input[type=text], input[type=password] { flex: 1 1 160px; min-width: 0; }
+  input[type=range] { flex: 1 1 120px; }
+  .hint { font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
+  #log { font-size: 13px; line-height: 1.5; max-height: 280px; overflow-y: auto; }
   #log div { border-bottom: 1px solid var(--line); padding: 4px 0; }
   #log img { width: 120px; border-radius: 6px; display: block; margin-top: 4px; }
   .muted { color: var(--muted); }
@@ -46,7 +52,8 @@
 <div id="stage">
   <video id="video" playsinline muted></video>
   <canvas id="canvas"></canvas>
-  <div id="info">按下「啟動系統」開始</div>
+  <div id="bubble"></div>
+  <div id="info">按下「啟動系統」開始（點一下之後就全自動）</div>
   <div id="alarm">
     <div class="big">⚠ 偵測到跌倒</div>
     <div>已通報家屬（模擬）</div>
@@ -69,8 +76,10 @@
   <h2>測試</h2>
   <div class="row">
     <button id="btnFake">模擬跌倒</button>
+    <button id="btnChat">主動問候</button>
     <button id="btnSpeak">測試說話</button>
     <button id="btnListen">測試聆聽</button>
+    <button id="btnAI">測試 AI</button>
   </div>
 </div>
 
@@ -87,10 +96,22 @@
 </div>
 
 <div class="panel">
-  <h2>設定</h2>
-  <label>轉向時間（毫秒）<input type="number" id="cfgTurn" value="800" step="100" min="100"></label>
+  <h2>對話與聲音</h2>
+  <label>稱呼長輩<input type="text" id="cfgName" value="阿嬤"></label>
+  <label>語速 <span id="rateVal"></span><input type="range" id="cfgRate" min="0.6" max="1.2" step="0.05" value="0.9"></label>
+  <label>音調 <span id="pitchVal"></span><input type="range" id="cfgPitch" min="0.8" max="1.5" step="0.05" value="1.1"></label>
+  <div class="hint">想換聲音：Android「設定 → 文字轉語音輸出 → Google 語音服務 → 國語（台灣）」選別的聲音。</div>
+  <label>Gemini 金鑰<input type="password" id="cfgKey" placeholder="貼上 API key（只存在這支手機）" autocomplete="off"></label>
+  <label>模型名稱<input type="text" id="cfgModel" value="gemini-flash-lite-latest"></label>
+  <label>主動關心間隔（分鐘）<input type="number" id="cfgChatMin" value="30" min="1" step="1"></label>
+  <div class="hint">沒填金鑰時，聊天會改用預設台詞。金鑰只存在這支手機的瀏覽器裡，不會上傳到 GitHub。</div>
+</div>
+
+<div class="panel">
+  <h2>跌倒偵測與 Tobbie 設定</h2>
   <label>躺平持續幾秒才確認<input type="number" id="cfgConfirm" value="3" step="0.5" min="1"></label>
   <label><input type="checkbox" id="cfgFast" checked> 必須是「快速倒下」才算跌倒（慢慢躺下不算）</label>
+  <label>轉向時間（毫秒）<input type="number" id="cfgTurn" value="800" step="100" min="100"></label>
   <label><input type="checkbox" id="cfgSwap"> Tobbie 左右對調（轉錯方向時勾選）</label>
 </div>
 
@@ -105,32 +126,58 @@ import { PoseLandmarker, FilesetResolver, DrawingUtils }
 
 // ===================== 參數 =====================
 const CFG = {
-  UPRIGHT_DEG: 35,      // 身體與垂直線夾角 < 35° → 直立（站或坐）
+  UPRIGHT_DEG: 35,      // 軀幹與垂直線夾角 < 35° → 直立（站或坐）
   LYING_DEG: 60,        // 夾角 > 60° → 躺平
-  FAST_FALL_SEC: 2.0,   // 從直立變躺平要在 2 秒內完成，才算「跌倒」
-  MIN_VIS: 0.5,         // 關節點可見度門檻
-  LISTEN_SEC: 8,        // 每次聆聽幾秒
-  ASK_TIMES: 2,         // 最多問幾次
-  COOLDOWN_SEC: 15,     // 取消或解除後，幾秒內不再觸發
+  FAST_FALL_SEC: 4.0,   // 從直立變躺平要在 4 秒內，才算「快速倒下」（含中間跟丟的時間）
+  MIN_VIS: 0.3,         // 關節點可見度門檻（降低後，快速動作比較不容易跟丟）
+  VANISH_SEC: 3,        // 人往下掉之後消失超過幾秒 → 主動詢問
+  DROP: 0.08,           // 1 秒內髖部往下掉超過畫面高度 8% → 算「往下掉」
+  LISTEN_SEC: 8,        // 跌倒詢問時，每次聆聽幾秒
+  ASK_TIMES: 2,         // 跌倒時最多問幾次
+  COOLDOWN_SEC: 20,     // 取消或解除後，幾秒內不再觸發
+  CHAT_LISTEN_SEC: 9,   // 聊天時每次聆聽幾秒
+  CHAT_MAX_TURNS: 6,    // 一次聊天最多幾輪
 };
-const OK_WORDS = ["沒事", "我很好", "還好", "不用", "沒關係", "我沒事", "OK", "ok"];
+const OK_WORDS = ["沒事", "我很好", "還好", "不用", "沒關係", "我沒事", "OK", "ok", "好得很"];
 const HELP_WORDS = ["救命", "幫忙", "幫我", "好痛", "很痛", "不好", "起不來", "救護車"];
+// 聊天時聽到這些詞 → 立刻切換到安全詢問流程（不交給 AI 判斷）
+const EMERGENCY_WORDS = ["救命", "跌倒", "好痛", "很痛", "起不來", "救護車", "胸口痛", "頭好暈", "喘不過氣"];
+const BYE_WORDS = ["掰掰", "拜拜", "再見", "不聊了", "先這樣", "我要睡了"];
+const MODEL_FALLBACKS = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-3.1-flash-lite", "gemini-3-flash-preview"];
 
 // ===================== 畫面元件 =====================
 const $ = (id) => document.getElementById(id);
 const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
 const draw = new DrawingUtils(ctx);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const name = () => ($("cfgName").value.trim() || "您");
+
+// ===================== 設定存在這支手機（localStorage）=====================
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("tobbie." + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("tobbie." + k, JSON.stringify(v)); } catch (e) {} },
+};
+const SETTINGS = ["cfgName", "cfgRate", "cfgPitch", "cfgKey", "cfgModel", "cfgChatMin", "cfgConfirm", "cfgFast", "cfgTurn", "cfgSwap"];
+for (const id of SETTINGS) {
+  const el = $(id);
+  const saved = store.get(id, null);
+  if (saved !== null) { if (el.type === "checkbox") el.checked = saved; else el.value = saved; }
+  el.addEventListener("change", () => store.set(id, el.type === "checkbox" ? el.checked : el.value));
+}
+function showVoiceVals() { $("rateVal").textContent = $("cfgRate").value; $("pitchVal").textContent = $("cfgPitch").value; }
+$("cfgRate").addEventListener("input", showVoiceVals); $("cfgPitch").addEventListener("input", showVoiceVals); showVoiceVals();
 
 // ===================== 狀態機 =====================
-// MONITOR 監測中 → SUSPECT 疑似跌倒 → ASK 詢問中 → ALARM 警報 / 取消後回到 MONITOR
+// MONITOR 監測中 / SUSPECT 疑似跌倒 / CHAT 聊天中 / ASK 跌倒詢問中 / ALARM 警報 / COOLDOWN 冷卻
 let state = "IDLE";
-const STATE_LABEL = { IDLE: "未啟動", MONITOR: "監測中", SUSPECT: "疑似跌倒", ASK: "詢問中", ALARM: "警報中", COOLDOWN: "冷卻中" };
+const STATE_LABEL = { IDLE: "未啟動", MONITOR: "監測中", SUSPECT: "疑似跌倒", CHAT: "聊天中", ASK: "詢問中", ALARM: "警報中", COOLDOWN: "冷卻中" };
+const STATE_COLOR = { MONITOR: "var(--ok)", SUSPECT: "var(--warn)", ASK: "var(--warn)", ALARM: "var(--bad)", CHAT: "var(--chat)" };
 function setState(s) {
   state = s;
   const el = $("state");
   el.textContent = STATE_LABEL[s] || s;
-  el.style.background = s === "ALARM" ? "var(--bad)" : s === "ASK" || s === "SUSPECT" ? "var(--warn)" : s === "MONITOR" ? "var(--ok)" : "var(--panel)";
-  el.style.color = s === "MONITOR" || s === "ALARM" ? "#fff" : s === "ASK" || s === "SUSPECT" ? "#000" : "var(--text)";
+  el.style.background = STATE_COLOR[s] || "var(--panel)";
+  el.style.color = (s === "SUSPECT" || s === "ASK") ? "#000" : STATE_COLOR[s] ? "#fff" : "var(--text)";
 }
 
 // ===================== 事件紀錄 =====================
@@ -142,35 +189,45 @@ function log(msg, imgUrl) {
   $("log").prepend(d);
 }
 function snapshot() {
+  if (!video.videoWidth) return null;
   const c = document.createElement("canvas");
-  c.width = 320; c.height = Math.round(320 * (video.videoHeight / video.videoWidth || 0.75));
+  c.width = 320; c.height = Math.round(320 * (video.videoHeight / video.videoWidth));
   c.getContext("2d").drawImage(video, 0, 0, c.width, c.height);
   return c.toDataURL("image/jpeg", 0.7);
 }
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function bubble(text) {
+  const b = $("bubble");
+  if (text) { b.textContent = text; b.classList.add("show"); } else { b.classList.remove("show"); }
+}
 
 // ===================== 說話（TTS）=====================
 let zhVoice = null;
 function pickVoice() {
-  const vs = speechSynthesis.getVoices();
-  zhVoice = vs.find((v) => v.lang === "zh-TW") || vs.find((v) => v.lang.startsWith("zh")) || null;
+  const vs = speechSynthesis.getVoices().filter((v) => v.lang.replace("_", "-").startsWith("zh"));
+  zhVoice = vs.find((v) => /TW/i.test(v.lang) && /google/i.test(v.name))
+         || vs.find((v) => /TW/i.test(v.lang))
+         || vs[0] || null;
 }
 speechSynthesis.onvoiceschanged = pickVoice;
 function speak(text) {
   return new Promise((resolve) => {
     speechSynthesis.cancel();
+    bubble(text);
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "zh-TW"; u.rate = 0.95;
+    u.lang = "zh-TW";
+    u.rate = Number($("cfgRate").value) || 0.9;
+    u.pitch = Number($("cfgPitch").value) || 1.1;
     if (zhVoice) u.voice = zhVoice;
     let done = false;
     const finish = () => { if (!done) { done = true; resolve(); } };
     u.onend = finish; u.onerror = finish;
     speechSynthesis.speak(u);
-    setTimeout(finish, 10000); // 保險：最多等 10 秒
+    setTimeout(finish, 4000 + text.length * 400); // 保險：依字數估計最長時間
   });
 }
 
 // ===================== 聆聽（語音辨識 STT）=====================
+let abortListen = null;
 function classify(text) {
   if (!text) return "none";
   if (HELP_WORDS.some((w) => text.includes(w)) && !text.includes("不用")) return "help";
@@ -178,34 +235,146 @@ function classify(text) {
   if (HELP_WORDS.some((w) => text.includes(w))) return "help";
   return "none";
 }
-function listen(sec) {
+// earlyStop：聽到關鍵詞就提早結束（跌倒詢問用）；聊天時改成「講完一句」就結束
+function listen(sec, earlyStop = true) {
   return new Promise((resolve) => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { log("此瀏覽器不支援語音辨識"); resolve({ kind: "none", text: "" }); return; }
     const rec = new SR();
-    rec.lang = "zh-TW"; rec.interimResults = true; rec.continuous = true;
-    let text = "", done = false;
+    rec.lang = "zh-TW"; rec.interimResults = true; rec.continuous = !!earlyStop;
+    let text = "", done = false, finalGot = false;
     const endAt = Date.now() + sec * 1000;
     const finish = (kind) => {
-      if (done) return; done = true; clearTimeout(timer);
+      if (done) return; done = true; clearTimeout(timer); abortListen = null;
       try { rec.stop(); } catch (e) {}
       resolve({ kind, text });
     };
+    abortListen = () => finish("abort");
     rec.onresult = (e) => {
       text = Array.from(e.results).map((r) => r[0].transcript).join("");
+      finalGot = e.results[e.results.length - 1].isFinal;
       $("info").textContent = `聽到：${text}`;
-      const k = classify(text);
-      if (k !== "none") finish(k);
+      if (earlyStop) { const k = classify(text); if (k !== "none") finish(k); }
+      else if (finalGot) finish(classify(text));
     };
     rec.onerror = (e) => {
       if (e.error === "not-allowed" || e.error === "service-not-allowed") { log("麥克風權限被拒絕"); finish("none"); }
     };
-    rec.onend = () => { // Android 常會提早結束，時間還沒到就重開
-      if (!done && Date.now() < endAt - 500) { try { rec.start(); } catch (e) {} }
+    rec.onend = () => { // Android 常提早結束；時間還沒到就重開
+      if (!done && !finalGot && Date.now() < endAt - 500) { try { rec.start(); } catch (e) {} }
+      else if (!done && finalGot) finish(classify(text));
     };
     const timer = setTimeout(() => finish(classify(text)), sec * 1000);
     try { rec.start(); } catch (e) { finish("none"); }
   });
+}
+function hush() { speechSynthesis.cancel(); if (abortListen) abortListen(); bubble(""); }
+
+// ===================== AI 聊天（Gemini）=====================
+function systemPrompt() {
+  return `你是一台住在長輩家裡的居家陪伴機器人，正在跟「${name()}」聊天。
+請用台灣日常口語的中文，語氣溫暖親切，像孫子孫女在聊天。
+每次回覆一到兩句、不超過 40 個字，常常用一個簡單的問題結尾，讓長輩願意繼續說。
+不要使用表情符號、條列、英文或括號說明。
+不要做醫療診斷；如果長輩說身體不舒服，溫柔關心，並建議告訴家人或去看醫生。`;
+}
+let workingModel = null;
+async function askGemini(history) {
+  const key = $("cfgKey").value.trim();
+  if (!key) return null;
+  const preferred = $("cfgModel").value.trim();
+  const models = [...new Set([workingModel, preferred, ...MODEL_FALLBACKS].filter(Boolean))];
+  for (const model of models) {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt() }] },
+          contents: history,
+          generationConfig: { temperature: 0.8, maxOutputTokens: 1024 },
+        }),
+      });
+      if (res.status === 404 || res.status === 400) { log(`模型 ${model} 無法使用（${res.status}），換下一個`); continue; }
+      if (res.status === 429) { log("AI 免費額度暫時用完，改用預設台詞"); return null; }
+      if (!res.ok) { log(`AI 錯誤：${res.status}`); return null; }
+      const j = await res.json();
+      const text = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+      if (!text) { log("AI 沒有回覆內容"); return null; }
+      if (workingModel !== model) { workingModel = model; log(`AI 使用模型：${model}`); }
+      return text.replace(/[*#>`]/g, "");
+    } catch (e) {
+      log(`AI 連線失敗：${e.message}`); return null;
+    }
+  }
+  return null;
+}
+
+// ===================== 主動聊天 =====================
+let lastChatT = 0;   // 上次聊天時間（0 = 啟動後還沒聊過）
+let chatAbort = false;
+function opener() {
+  const h = new Date().getHours();
+  const hi = h < 11 ? "早安" : h < 14 ? "午安" : h < 18 ? "午安" : "晚安";
+  const lines = [
+    `${name()}，${hi}呀！今天過得怎麼樣？`,
+    `${name()}，${hi}～有沒有記得喝水呀？`,
+    `${name()}，${hi}！今天身體還舒服嗎？`,
+  ];
+  return lines[Math.floor(Math.random() * lines.length)];
+}
+const CANNED = ["嗯嗯，我有在聽喔。然後呢？", "這樣啊～那您現在感覺怎麼樣？", "真好～還有什麼想跟我分享的嗎？"];
+
+async function startChat(reason) {
+  if (state !== "MONITOR") return;
+  setState("CHAT");
+  chatAbort = false;
+  lastChatT = performance.now();
+  log(`開始主動關心（${reason}）`);
+  const history = [];
+  const first = opener();
+  history.push({ role: "model", parts: [{ text: first }] });
+  log(`機器人：${first}`);
+  await speak(first);
+  for (let turn = 0; turn < CFG.CHAT_MAX_TURNS && !chatAbort; turn++) {
+    $("info").textContent = "聊天中，聆聽…";
+    const ans = await listen(CFG.CHAT_LISTEN_SEC, false);
+    if (chatAbort || ans.kind === "abort") return;
+    const said = ans.text.trim();
+    if (!said) {
+      const bye = "好喔，那我先不吵您，有需要再叫我～";
+      log(`（沒有回應）機器人：${bye}`);
+      await speak(bye);
+      break;
+    }
+    log(`${name()}：${said}`);
+    if (EMERGENCY_WORDS.some((w) => said.includes(w))) {
+      log("聊天中聽到緊急關鍵詞，切換到安全詢問流程");
+      endChat();
+      onFall(lastPx, "chat");
+      return;
+    }
+    if (BYE_WORDS.some((w) => said.includes(w))) {
+      const bye = "好～那我們等等再聊，掰掰！";
+      log(`機器人：${bye}`);
+      await speak(bye);
+      break;
+    }
+    history.push({ role: "user", parts: [{ text: said }] });
+    $("info").textContent = "思考中…";
+    let reply = await askGemini(history);
+    if (chatAbort) return;
+    if (!reply) reply = CANNED[turn % CANNED.length];
+    history.push({ role: "model", parts: [{ text: reply }] });
+    log(`機器人：${reply}`);
+    await speak(reply);
+  }
+  endChat();
+}
+function endChat() {
+  if (state === "CHAT") setState("MONITOR");
+  lastChatT = performance.now();
+  bubble("");
 }
 
 // ===================== 警報聲 =====================
@@ -239,26 +408,22 @@ const robot = {
     const server = await dev.gatt.connect();
     const svc = await server.getPrimaryService(UART_SERVICE);
     const chars = await svc.getCharacteristics();
-    // 找「可寫入」的那個特徵值（手機 → micro:bit）
     this.rx = chars.find((c) => c.properties.write || c.properties.writeWithoutResponse) || null;
     if (!this.rx) throw new Error("找不到可寫入的 UART 特徵值");
     $("robotStatus").textContent = `Tobbie：已連線（${dev.name}）`;
     log("Tobbie 藍牙已連線");
   },
   send(cmd) {
-    if (!this.rx) { log(`Tobbie 未連線，略過指令 ${cmd}`); return Promise.resolve(); }
+    if (!this.rx) return Promise.resolve();
     const data = new TextEncoder().encode(cmd + "#");
     const ch = this.rx;
-    // 指令排隊，避免藍牙同時寫入出錯
     this.queue = this.queue
       .then(() => ch.properties.write ? ch.writeValueWithResponse(data) : ch.writeValueWithoutResponse(data))
       .catch((e) => log(`傳送 ${cmd} 失敗：${e.message}`));
     return this.queue;
   },
 };
-
 async function turnToward(px) {
-  // px：人在畫面中的水平位置，0 = 最左、1 = 最右
   let dir = px < 0.4 ? "L" : px > 0.6 ? "R" : null;
   if (dir && $("cfgSwap").checked) dir = dir === "L" ? "R" : "L";
   if (dir) {
@@ -270,22 +435,26 @@ async function turnToward(px) {
   await robot.send("H");
 }
 
-// ===================== 跌倒流程 =====================
+// ===================== 跌倒流程（規則判斷，不交給 AI）=====================
 let cooldownUntil = 0;
-async function onFall(px) {
+async function onFall(px, reason) {
   if (state === "ASK" || state === "ALARM") return;
+  if (state === "CHAT") { chatAbort = true; hush(); }
   setState("ASK");
-  log("偵測到疑似跌倒", snapshot());
+  const why = { lying: "偵測到疑似跌倒", vanish: "長者往下掉後消失在畫面中", chat: "聊天中提到緊急狀況", test: "（測試）模擬跌倒" }[reason] || "偵測到異常";
+  log(why, snapshot());
   robot.send("A");
-  const prompts = ["您還好嗎？需要幫忙嗎？", "請問您還好嗎？請回答我。"];
+  const prompts = reason === "vanish"
+    ? [`${name()}，我突然看不到您了，您還好嗎？`, `${name()}，聽得到我嗎？沒事的話，跟我說「沒事」就好喔。`]
+    : [`${name()}，您還好嗎？是不是跌倒了？`, `${name()}，聽得到我嗎？沒事的話，跟我說「沒事」就好喔。`];
   for (let i = 0; i < CFG.ASK_TIMES; i++) {
     $("info").textContent = `詢問中（第 ${i + 1} 次）`;
-    await speak(prompts[i] || prompts[1]);
+    await speak(prompts[i]);
     $("info").textContent = "聆聽中…";
-    const ans = await listen(CFG.LISTEN_SEC);
+    const ans = await listen(CFG.LISTEN_SEC, true);
     log(`第 ${i + 1} 次回應：「${ans.text || "（沒有回應）"}」→ ${ans.kind === "ok" ? "沒事" : ans.kind === "help" ? "求救" : "無法判斷"}`);
     if (ans.kind === "ok") {
-      await speak("好的，請小心慢慢起來。");
+      await speak("那就好～慢慢起來，不要急喔。");
       robot.send("N");
       log("長者表示沒事，取消警報");
       startCooldown();
@@ -295,7 +464,6 @@ async function onFall(px) {
   }
   raiseAlarm(px);
 }
-
 async function raiseAlarm(px) {
   setState("ALARM");
   $("alarmTime").textContent = new Date().toLocaleString("zh-TW", { hour12: false });
@@ -303,70 +471,109 @@ async function raiseAlarm(px) {
   log("警報：已通報家屬（模擬）", snapshot());
   startBeep();
   turnToward(px);
-  await speak("已經通知您的家人，請不要移動，救援馬上就到。");
+  await speak(`${name()}別擔心，我已經通知您的家人了。先不要亂動，我在這裡陪您。`);
 }
-
 function startCooldown() {
   setState("COOLDOWN");
+  bubble("");
   cooldownUntil = performance.now() + CFG.COOLDOWN_SEC * 1000;
   resetDetector();
+  lastChatT = performance.now();
   setTimeout(() => { if (state === "COOLDOWN") setState("MONITOR"); }, CFG.COOLDOWN_SEC * 1000);
 }
-
 $("btnClear").onclick = () => {
   $("alarm").classList.remove("show");
-  stopBeep(); speechSynthesis.cancel();
+  stopBeep(); hush();
   robot.send("S"); robot.send("N");
   log("警報已解除");
   startCooldown();
 };
 
 // ===================== 跌倒判斷 =====================
-// 白話：看「肩膀中點」到「髖部中點」這條線（軀幹）跟垂直線的夾角。
-// 站或坐時接近 0°；躺平時接近 90°。從直立快速變成躺平，並且躺著超過幾秒沒起來 → 判定跌倒。
+// 白話：看「肩膀中點 → 髖部中點」這條線（軀幹）跟垂直線的夾角。站或坐 ≈ 0°，躺平 ≈ 90°。
+// 規則一（躺平）：4 秒內從直立變躺平，而且躺著超過幾秒 → 跌倒。
+// 規則二（消失）：人往下掉或身體傾斜時從畫面消失，超過 3 秒沒再出現 → 主動詢問（處理被東西遮住的情況）。
+// 同時偵測最多 2 個人，鏡子裡的倒影也算，取「最平躺」的那一個來判斷。
 let lastUprightT = 0, lyingSince = null, fastFall = false;
-function resetDetector() { lastUprightT = 0; lyingSince = null; fastFall = false; }
+let lastSeenT = 0, vanishRisk = false, lastPx = 0.5;
+let hipTrail = []; // 最近 1.5 秒的髖部高度
+function resetDetector() {
+  lastUprightT = 0; lyingSince = null; fastFall = false;
+  lastSeenT = 0; vanishRisk = false; hipTrail = [];
+}
 const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+const watching = () => state === "MONITOR" || state === "SUSPECT" || state === "CHAT";
 
-function analyze(lm, now) {
+function measure(lm) {
   const idx = [11, 12, 23, 24]; // 左右肩、左右髖
-  if (idx.some((i) => (lm[i].visibility ?? 1) < CFG.MIN_VIS)) {
-    $("info").textContent = "看不清楚肩膀或髖部，請讓全身入鏡";
-    return;
-  }
+  if (idx.some((i) => (lm[i].visibility ?? 1) < CFG.MIN_VIS)) return null;
   const sh = mid(lm[11], lm[12]), hp = mid(lm[23], lm[24]);
   const aspect = (video.videoWidth || 4) / (video.videoHeight || 3);
   const dx = (sh.x - hp.x) * aspect, dy = hp.y - sh.y;
-  const deg = Math.atan2(Math.abs(dx), Math.abs(dy)) * 180 / Math.PI;
+  return { deg: Math.atan2(Math.abs(dx), Math.abs(dy)) * 180 / Math.PI, hp };
+}
 
-  if (state !== "MONITOR" && state !== "SUSPECT") {
-    $("info").textContent = `軀幹角度 ${deg.toFixed(0)}°`;
-    return;
+function analyze(poses, now) {
+  const ms = poses.map(measure).filter(Boolean);
+  if (!ms.length) { noPerson(now); return; }
+  const primary = ms.reduce((a, b) => (b.deg > a.deg ? b : a)); // 最平躺的那個
+  const deg = primary.deg;
+  lastPx = primary.hp.x;
+  lastSeenT = now;
+  hipTrail.push({ t: now, y: primary.hp.y });
+  hipTrail = hipTrail.filter((p) => now - p.t <= 1500);
+  const old = hipTrail.find((p) => now - p.t >= 800) || hipTrail[0];
+  const dropping = primary.hp.y - old.y > CFG.DROP;
+  vanishRisk = dropping || deg > 45;
+
+  if (ms.some((m) => m.deg < CFG.UPRIGHT_DEG)) {
+    lastUprightT = now;
+    if (deg < CFG.UPRIGHT_DEG) { lyingSince = null; fastFall = false; }
   }
-  if (deg < CFG.UPRIGHT_DEG) {
-    lastUprightT = now; lyingSince = null; fastFall = false;
-    if (state === "SUSPECT") setState("MONITOR");
-    $("info").textContent = `直立（軀幹角度 ${deg.toFixed(0)}°）`;
-  } else if (deg > CFG.LYING_DEG) {
+  if (!watching()) { $("info").textContent = `軀幹角度 ${deg.toFixed(0)}°`; return; }
+
+  if (deg > CFG.LYING_DEG) {
     if (lyingSince === null) {
       lyingSince = now;
       fastFall = lastUprightT > 0 && (now - lastUprightT) <= CFG.FAST_FALL_SEC * 1000;
     }
-    const needFast = $("cfgFast").checked;
-    if (needFast && !fastFall) {
-      $("info").textContent = `躺平，但不是快速倒下（軀幹角度 ${deg.toFixed(0)}°）`;
+    if ($("cfgFast").checked && !fastFall) {
+      $("info").textContent = `躺平，但不是快速倒下（距離上次直立 ${lastUprightT ? ((now - lastUprightT) / 1000).toFixed(1) : "—"} 秒）`;
       return;
     }
-    setState("SUSPECT");
+    if (state === "MONITOR") setState("SUSPECT");
     const held = (now - lyingSince) / 1000;
     const need = Number($("cfgConfirm").value) || 3;
     $("info").textContent = `疑似跌倒，確認中 ${held.toFixed(1)} / ${need} 秒`;
     if (held >= need && now > cooldownUntil) {
       lyingSince = null; fastFall = false;
-      onFall(hp.x);
+      onFall(primary.hp.x, "lying");
     }
-  } else {
-    $("info").textContent = `傾斜中（軀幹角度 ${deg.toFixed(0)}°）`;
+    return;
+  }
+  if (state === "SUSPECT") setState("MONITOR");
+  if (deg >= CFG.UPRIGHT_DEG) lyingSince = null;
+  $("info").textContent = `${deg < CFG.UPRIGHT_DEG ? "直立" : "傾斜中"}（軀幹角度 ${deg.toFixed(0)}°，偵測到 ${ms.length} 人）`;
+
+  // 主動關心：看到人、而且距離上次聊天超過設定時間（啟動後第一次看到人就打招呼）
+  const gapMin = Number($("cfgChatMin").value) || 30;
+  if (state === "MONITOR" && deg < CFG.UPRIGHT_DEG && now > cooldownUntil &&
+      (lastChatT === 0 || now - lastChatT >= gapMin * 60000)) {
+    startChat(lastChatT === 0 ? "啟動後第一次看到人" : `超過 ${gapMin} 分鐘沒聊天`);
+  }
+}
+
+function noPerson(now) {
+  if (!watching()) return;
+  if (lastSeenT && vanishRisk && now > cooldownUntil) {
+    const gone = (now - lastSeenT) / 1000;
+    $("info").textContent = `人往下掉後消失，等待中 ${gone.toFixed(1)} / ${CFG.VANISH_SEC} 秒`;
+    if (gone >= CFG.VANISH_SEC) {
+      lastSeenT = 0; vanishRisk = false;
+      onFall(lastPx, "vanish");
+    }
+  } else if (state === "MONITOR") {
+    $("info").textContent = "畫面中沒有偵測到人";
   }
 }
 
@@ -380,12 +587,12 @@ async function loadModel() {
       modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
       delegate,
     },
-    runningMode: "VIDEO", numPoses: 1,
+    runningMode: "VIDEO", numPoses: 2,
+    minPoseDetectionConfidence: 0.3, minPosePresenceConfidence: 0.3, minTrackingConfidence: 0.3,
   });
   try { landmarker = await PoseLandmarker.createFromOptions(fileset, opts("GPU")); }
   catch (e) { log("GPU 載入失敗，改用 CPU"); landmarker = await PoseLandmarker.createFromOptions(fileset, opts("CPU")); }
 }
-
 function loop() {
   if (landmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
@@ -393,22 +600,19 @@ function loop() {
     const res = landmarker.detectForVideo(video, now);
     if (canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (res.landmarks && res.landmarks[0]) {
-      const lm = res.landmarks[0];
+    const poses = res.landmarks || [];
+    for (const lm of poses) {
       draw.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: "#4f8cff", lineWidth: 3 });
       draw.drawLandmarks(lm, { color: "#ffffff", radius: 3 });
-      analyze(lm, now);
-    } else if (state === "MONITOR") {
-      $("info").textContent = "畫面中沒有偵測到人";
     }
+    analyze(poses, now);
   }
   requestAnimationFrame(loop);
 }
 
 // ===================== 切換前／後鏡頭 =====================
-let facing = "environment"; // environment = 後鏡頭，user = 前鏡頭
+let facing = "environment";
 async function startCamera(mode) {
-  // 先關掉目前的鏡頭
   if (video.srcObject) video.srcObject.getTracks().forEach((t) => t.stop());
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: { ideal: mode }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false,
@@ -417,38 +621,38 @@ async function startCamera(mode) {
   await video.play();
   facing = mode;
   lastVideoTime = -1;
-  // 前鏡頭用鏡像顯示，比較直覺；只影響畫面，不影響跌倒判斷
   $("stage").classList.toggle("mirror", mode === "user");
 }
 $("btnFlip").onclick = async () => {
   const next = facing === "environment" ? "user" : "environment";
-  try {
-    await startCamera(next);
-    log(`已切換到${next === "user" ? "前" : "後"}鏡頭`);
-  } catch (e) {
-    log(`切換鏡頭失敗：${e.message}`);
-  }
+  try { await startCamera(next); log(`已切換到${next === "user" ? "前" : "後"}鏡頭`); }
+  catch (e) { log(`切換鏡頭失敗：${e.message}`); }
 };
 
+// ===================== 螢幕常亮 =====================
+let wakeLock = null;
+async function keepAwake() { try { wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) {} }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && state !== "IDLE") keepAwake(); });
+
+// ===================== 啟動 =====================
 $("btnStart").onclick = async () => {
   $("btnStart").disabled = true;
   try {
-    // 在使用者點擊時解鎖聲音
+    // 瀏覽器規定：要使用者點過一下，網頁才能發出聲音（autoplay policy）。這一下就是解鎖。
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     pickVoice();
     $("info").textContent = "開啟鏡頭中…";
     await startCamera("environment");
-    // 先要麥克風權限，之後聆聽時就不會卡住
     try { const mic = await navigator.mediaDevices.getUserMedia({ audio: true }); mic.getTracks().forEach((t) => t.stop()); }
     catch (e) { log("麥克風權限被拒絕，聆聽功能無法使用"); }
-    // 讓螢幕保持常亮
-    try { await navigator.wakeLock?.request("screen"); } catch (e) {}
+    await keepAwake();
     $("info").textContent = "載入姿勢辨識模型中（第一次約 10–30 秒）…";
     await loadModel();
-    setState("MONITOR");
     $("btnFlip").disabled = false;
     log("系統啟動，開始監測");
-    speak("系統已啟動。");
+    if (!$("cfgKey").value.trim()) log("尚未填 Gemini 金鑰，聊天會使用預設台詞");
+    await speak(`${name()}您好，我開始陪您囉！`);
+    setState("MONITOR");
     requestAnimationFrame(loop);
   } catch (e) {
     log(`啟動失敗：${e.message}`);
@@ -457,23 +661,33 @@ $("btnStart").onclick = async () => {
   }
 };
 
+// ===================== 按鈕 =====================
 $("btnConnect").onclick = async () => {
   try { await robot.connect(); } catch (e) { log(`Tobbie 連線失敗：${e.message}`); }
 };
 $("btnFake").onclick = () => {
   if (state === "IDLE") { alert("請先啟動系統"); return; }
-  log("（測試）手動觸發模擬跌倒");
-  onFall(0.2);
+  onFall(0.2, "test");
 };
-$("btnSpeak").onclick = () => speak("您好，我是照護機器人。您還好嗎？");
+$("btnChat").onclick = () => {
+  if (state === "IDLE") { alert("請先啟動系統"); return; }
+  if (state !== "MONITOR") { log("目前忙碌中，稍後再試"); return; }
+  startChat("手動觸發");
+};
+$("btnSpeak").onclick = () => speak(`${name()}，您好呀！今天有沒有吃飽呀？`);
 $("btnListen").onclick = async () => {
   await speak("請說話。");
-  const r = await listen(6);
-  log(`測試聆聽：「${r.text || "（沒有聽到）"}」→ ${r.kind}`);
+  const r = await listen(6, false);
+  log(`測試聆聽：「${r.text || "（沒有聽到）"}」`);
 };
-document.querySelectorAll("button[data-cmd]").forEach((b) => {
-  b.onclick = () => robot.send(b.dataset.cmd);
-});
+$("btnAI").onclick = async () => {
+  if (!$("cfgKey").value.trim()) { alert("請先在「對話與聲音」填入 Gemini 金鑰"); return; }
+  log("測試 AI 中…");
+  const r = await askGemini([{ role: "user", parts: [{ text: "我今天去公園散步，有點累" }] }]);
+  log(r ? `AI 回覆：${r}` : "AI 測試失敗，請看上面的錯誤訊息");
+  if (r) speak(r);
+};
+document.querySelectorAll("button[data-cmd]").forEach((b) => { b.onclick = () => robot.send(b.dataset.cmd); });
 </script>
 </body>
 </html>
