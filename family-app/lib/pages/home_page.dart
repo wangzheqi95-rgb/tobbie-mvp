@@ -4,95 +4,170 @@ import 'package:flutter/material.dart';
 
 import '../util.dart';
 import 'device_page.dart';
-import 'settings_page.dart';
+import 'elder_page.dart';
+import 'incident_page.dart';
+import 'onboarding_page.dart';
 
-/// 首頁：我綁定的機器人（在線狀態、最新事件）＋新增機器人。
+/// 首頁「我的長輩」（照設計稿）：每位長輩一張卡（平安／警報／離線、步數、心率、上次聊天）＋最近事件。
 class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, required this.devices});
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> devices;
+
+  String _greeting() {
+    final h = DateTime.now().hour;
+    return h < 11 ? '早安' : h < 18 ? '午安' : '晚安';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final user = FirebaseAuth.instance.currentUser;
     return Scaffold(
-      appBar: AppBar(title: const Text('我的長輩'), actions: [
-        IconButton(icon: const Icon(Icons.settings), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()))),
-      ]),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _bind(context), icon: const Icon(Icons.add), label: const Text('新增長輩')),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance.collection('devices').where('members', arrayContains: uid).snapshots(),
-        builder: (context, snap) {
-          if (snap.hasError) return Center(child: Text('讀取失敗：${snap.error}'));
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-          final docs = snap.data!.docs;
-          if (docs.isEmpty) {
-            return const Center(child: Padding(padding: EdgeInsets.all(32),
-              child: Text('還沒有綁定機器人。\n請按右下角「新增機器人」，輸入機器人畫面上的 6 位數配對碼。', textAlign: TextAlign.center)));
-          }
-          return ListView(children: [for (final d in docs) _DeviceTile(id: d.id, data: d.data())]);
-        },
-      ),
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) =>
+            OnboardingPage(startAtCode: true, onDone: () => Navigator.pop(c)))),
+        icon: const Icon(Icons.add), label: const Text('新增長輩')),
+      body: SafeArea(child: ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 96), children: [
+        StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance.collection('users').doc(user!.uid).snapshots(),
+          builder: (c, s) => Text('${_greeting()}，${s.data?.data()?['displayName'] ?? ''}',
+              style: const TextStyle(fontSize: 15, color: brandMuted)),
+        ),
+        const Text('我的長輩', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 14),
+        for (final d in devices) ...[ElderCard(id: d.id, data: d.data()), const SizedBox(height: 14)],
+      ])),
     );
-  }
-
-  static const relations = ['兒子', '女兒', '配偶', '孫子女', '照顧者', '其他'];
-
-  Future<void> _bind(BuildContext context) async {
-    final ctl = TextEditingController();
-    var relation = relations.first;
-    final code = await showDialog<String>(context: context, builder: (c) => StatefulBuilder(builder: (c, setS) => AlertDialog(
-      title: const Text('新增長輩'),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        TextField(controller: ctl, keyboardType: TextInputType.number, maxLength: 6,
-            decoration: const InputDecoration(labelText: '6 位數配對碼', helperText: '機器人螢幕上的配對碼，或家人給你的邀請碼')),
-        DropdownButtonFormField<String>(value: relation, decoration: const InputDecoration(labelText: '您是長輩的'),
-            items: [for (final r in relations) DropdownMenuItem(value: r, child: Text(r))],
-            onChanged: (v) => setS(() => relation = v ?? relation)),
-      ]),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c, ctl.text.trim()), child: const Text('配對')),
-      ],
-    )));
-    if (code == null || code.isEmpty || !context.mounted) return;
-    try {
-      final r = await functions.httpsCallable('bindDevice').call({'code': code, 'relation': relation});
-      final primary = (r.data as Map)['primary'] == true;
-      if (context.mounted) toast(context, primary ? '配對成功！您是主要監護人，可以到「通知與監護人」邀請其他家人。' : '配對成功！');
-    } catch (e) {
-      if (context.mounted) toast(context, '綁定失敗：${errText(e)}');
-    }
   }
 }
 
-class _DeviceTile extends StatelessWidget {
-  const _DeviceTile({required this.id, required this.data});
+class ElderCard extends StatelessWidget {
+  const ElderCard({super.key, required this.id, required this.data});
   final String id;
   final Map<String, dynamic> data;
 
   @override
   Widget build(BuildContext context) {
-    final last = data['lastSeen'] as num?;
-    final online = last != null && DateTime.now().millisecondsSinceEpoch - last < 3 * 60 * 1000;
-    final name = (data['elderName'] as String?)?.isNotEmpty == true ? data['elderName'] : '（尚未設定稱呼）';
+    final ref = FirebaseFirestore.instance.collection('devices').doc(id);
+    final name = (data['elderName'] as String?)?.isNotEmpty == true ? data['elderName'] as String : '（尚未設定稱呼）';
+    final online = isOnline(data);
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance.collection('devices').doc(id).collection('incidents').orderBy('start', descending: true).limit(1).snapshots(),
+      stream: ref.collection('incidents').orderBy('start', descending: true).limit(2).snapshots(),
       builder: (context, s) {
-        final latest = s.data?.docs.isNotEmpty == true ? s.data!.docs.first.data() : null;
-        final st = latest == null ? null : statusOf(latest);
-        return Card(
-          margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-          child: ListTile(
-            leading: Icon(Icons.smart_toy, color: online ? Colors.green : Colors.grey, size: 36),
-            title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('${online ? '在線' : '離線'}｜最後回報 ${ago(last)}'
-                '${latest != null ? '\n最近事件：${fmtTime(latest['start'])}' : ''}'),
-            isThreeLine: latest != null,
-            trailing: st == null ? null : Chip(label: Text(st.$1, style: const TextStyle(color: Colors.white)), backgroundColor: st.$2),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DevicePage(deviceId: id))),
+        final recent = s.data?.docs ?? [];
+        final alerts = recent.where((e) => e.data()['outcome'] == 'ALERTED' && e.data()['resolved'] == null).toList();
+        final openAlert = alerts.isEmpty ? null : alerts.first;
+        final (pill, pillFg, pillBg) = openAlert != null
+            ? ('警報中', Colors.white, alertRed)
+            : online ? ('平安', brandTeal, brandTealLight) : ('離線', amber, amberLight);
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (openAlert != null)
+            Padding(padding: const EdgeInsets.only(bottom: 10), child: Material(
+              color: alertRed, borderRadius: BorderRadius.circular(16),
+              child: InkWell(borderRadius: BorderRadius.circular(16),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => IncidentPage(deviceId: id, incidentId: openAlert.id))),
+                child: Padding(padding: const EdgeInsets.all(16), child: Row(children: [
+                  const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text('$name可能跌倒且沒有回應\n${openAlert.data()['ackByName'] != null ? '${openAlert.data()['ackByName']} 已接手' : '點這裡處理'}',
+                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, height: 1.4))),
+                  const Icon(Icons.chevron_right, color: Colors.white),
+                ]))),
+            )),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: cardDecoration.copyWith(borderRadius: BorderRadius.circular(20)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              InkWell(
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DevicePage(deviceId: id))),
+                child: Row(children: [
+                  CircleAvatar(radius: 28, backgroundColor: brandTealLight,
+                      child: Text(name.characters.last, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: brandTeal))),
+                  const SizedBox(width: 14),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    Text(online ? '機器人在線，${ago(data['lastSeen'] as num?)}回報' : '機器人離線 ${ago(data['lastSeen'] as num?)}，請確認電源與網路',
+                        style: const TextStyle(fontSize: 14, color: brandMuted)),
+                  ])),
+                  Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(999)),
+                      child: Text(pill, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: pillFg))),
+                ]),
+              ),
+              const SizedBox(height: 14),
+              StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                stream: ref.collection('health').doc('latest').snapshots(),
+                builder: (context, h) {
+                  final x = h.data?.data();
+                  final hr = (x?['hr'] as List?) ?? const [];
+                  final last = hr.isEmpty ? null : hr.last as Map;
+                  // 步數只算「今天」的（後端記錄 stepsDay＝台灣時間今天 0 點）
+                  final now = DateTime.now();
+                  final midnight = DateTime(now.year, now.month, now.day).millisecondsSinceEpoch;
+                  final stepsToday = x != null && x['stepsDay'] == midnight ? x['stepsToday'] : null;
+                  return Row(children: [
+                    Expanded(child: _Stat('今天活動', stepsToday == null ? '—' : '$stepsToday 步')),
+                    const SizedBox(width: 8),
+                    Expanded(child: _Stat('心率', last == null ? '—' : '${last['bpm']} bpm')),
+                    const SizedBox(width: 8),
+                    Expanded(child: _Stat('上次聊天', data['lastTalkAt'] == null ? '—' : ago(data['lastTalkAt'] as num?))),
+                  ]);
+                },
+              ),
+              const SizedBox(height: 14),
+              Row(children: [
+                Expanded(child: FilledButton(
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ElderPage(deviceId: id))),
+                  child: const Text('長輩資料'))),
+                const SizedBox(width: 8),
+                Expanded(child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DevicePage(deviceId: id))),
+                  child: const Text('事件紀錄'))),
+              ]),
+            ]),
           ),
-        );
+          if (recent.isNotEmpty) ...[
+            const Padding(padding: EdgeInsets.fromLTRB(4, 16, 4, 8), child: Text('最近事件', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold))),
+            for (final e in recent) _EventTile(deviceId: id, id: e.id, x: e.data()),
+          ],
+        ]);
       },
     );
+  }
+}
+
+class _Stat extends StatelessWidget {
+  const _Stat(this.label, this.value);
+  final String label, value;
+  @override
+  Widget build(BuildContext context) => Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: brandCream, borderRadius: BorderRadius.circular(14)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: const TextStyle(fontSize: 12, color: brandMuted)),
+        const SizedBox(height: 4),
+        FittedBox(fit: BoxFit.scaleDown, child: Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+      ]));
+}
+
+class _EventTile extends StatelessWidget {
+  const _EventTile({required this.deviceId, required this.id, required this.x});
+  final String deviceId, id;
+  final Map<String, dynamic> x;
+  @override
+  Widget build(BuildContext context) {
+    final st = statusOf(x);
+    return Padding(padding: const EdgeInsets.only(bottom: 8), child: Material(
+      color: Colors.white, shape: RoundedRectangleBorder(side: const BorderSide(color: brandLine), borderRadius: BorderRadius.circular(16)),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        leading: Icon(Icons.circle, size: 12, color: st.$2),
+        title: Text(st.$1, style: const TextStyle(fontWeight: FontWeight.w500)),
+        subtitle: Text('${fmtTime(x['start'])}｜${x['reasonLabel'] ?? x['reason']}'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => IncidentPage(deviceId: deviceId, incidentId: id))),
+      ),
+    ));
   }
 }

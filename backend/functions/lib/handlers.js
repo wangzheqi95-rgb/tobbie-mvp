@@ -301,6 +301,18 @@ async function updateMyProfile(deps, uid, data) {
   return { ok: true };
 }
 
+/** 新手引導最後一步：發一則「測試警報」給自己，確認手機會響（不會通知其他人或守護中心）。每分鐘最多一次。 */
+async function sendTestAlert(deps, uid, data) {
+  const user = await userOf(deps, uid);
+  const dev = await deviceFor(deps, user, data.deviceId);
+  if (user.lastTestAlertAt && deps.now() - user.lastTestAlertAt < 60 * 1000) throw new HttpError(429, "請稍等一分鐘再試");
+  await deps.db.collection("users").doc(uid).set({ lastTestAlertAt: deps.now() }, { merge: true });
+  const msg = { level: "critical", title: "測試警報：這只是測試", body: `如果你聽到聲音、看到這則通知，${dev.data.elderName || "長輩"}真的有狀況時你就收得到。` };
+  const r = await notifyUsers(deps, [uid], msg, { deviceId: dev.ref.id, test: "1" });
+  await audit(deps, uid, "sendTestAlert", { deviceId: dev.ref.id });
+  return { ok: true, push: r.push, line: r.line, tokens: r.tokens };
+}
+
 /** 家人按「我來處理」：停止往下一位升級，並告訴其他收到通知的人與機器人。 */
 async function ackIncident(deps, uid, data) {
   const user = await userOf(deps, uid);
@@ -343,6 +355,7 @@ async function updateDeviceConfig(deps, uid, data) {
   const patch = {};
   if (typeof data.elderName === "string") patch.elderName = data.elderName.slice(0, 20);
   if (typeof data.profile === "string") patch.profile = data.profile.slice(0, 2000);
+  if (data.elder && typeof data.elder === "object") Object.assign(patch, C.elderProfile(data.elder)); // 表單欄位會覆蓋 profile 文字
   await dref.update(patch);
   await audit(deps, uid, "updateDeviceConfig", { deviceId: dref.id, fields: Object.keys(patch) });
   return { ok: true };
@@ -518,5 +531,5 @@ async function purgeExpired(deps, incidentsQueryOlderThan) {
 module.exports = {
   HttpError, route, authDevice, register, heartbeat, postIncident, patchIncident, chat,
   bindDevice, resolveIncident, updateDeviceConfig, createLineLinkCode, lineWebhook, onIncidentWritten, purgeExpired,
-  postHealth, createInviteCode, updateGuardians, updateMyProfile, ackIncident, escalateDue, notifyOffline, dailySummary, notifyUsers,
+  sendTestAlert, postHealth, createInviteCode, updateGuardians, updateMyProfile, ackIncident, escalateDue, notifyOffline, dailySummary, notifyUsers,
 };

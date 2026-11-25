@@ -185,3 +185,20 @@ test("離線通知只發一次、恢復後重置；每日摘要只發給有開�
   assert.deepEqual(f.sent.push[0].tokens, ["tok-hua"]);
   assert.match(f.sent.push[0].msg.body, /沒有任何跌倒偵測，走了 3,100 步/);
 });
+
+test("長輩資料表單 → 整理成文字；測試警報只發給自己、每分鐘一次", async () => {
+  const { f, d, devId } = await setup();
+  await H.updateDeviceConfig(d, "mei", { deviceId: devId, elder: { age: "82歲", living: "獨居", meds: "降血壓藥（早上一顆）", allergies: "無", history: "" } });
+  const dev = f.store.docs.get(`devices/${devId}`);
+  assert.equal(dev.profile, "82 歲，獨居\n慣用藥物：降血壓藥（早上一顆）\n過敏：無");
+  assert.equal(dev.elder.age, "82");
+  f.sent.push.length = 0;
+  const r = await H.sendTestAlert(d, "mei", { deviceId: devId });
+  assert.equal(r.push, 1);
+  assert.deepEqual(f.sent.push[0].tokens, ["tok-mei"], "只發給自己");
+  assert.equal(f.sent.push[0].msg.level, "critical");
+  await assert.rejects(H.sendTestAlert(d, "mei", { deviceId: devId }), /一分鐘/);
+  f.advance(61 * 1000);
+  await H.sendTestAlert(d, "mei", { deviceId: devId });
+  await assert.rejects(H.sendTestAlert(d, "stranger", { deviceId: devId }), /沒有權限/);
+});

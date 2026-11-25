@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'firebase_options.dart'; // 由 `flutterfire configure` 產生（不進版控）
 import 'notifications.dart';
-import 'pages/home_page.dart';
+import 'pages/shell.dart';
 import 'pages/login_page.dart';
 import 'util.dart';
 
@@ -36,7 +36,7 @@ class NearaFamilyApp extends StatelessWidget {
           }
           if (snap.data == null) return const LoginPage();
           Notifications.registerToken(snap.data!.uid);
-          return const HomePage();
+          return const Shell();
         },
       ),
     );

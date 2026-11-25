@@ -83,7 +83,7 @@ async function sendLine(to, text) {
 
 const asHttps = (e) => {
   if (e instanceof H.HttpError) {
-    const code = { 400: "invalid-argument", 401: "unauthenticated", 403: "permission-denied", 404: "not-found", 409: "already-exists" }[e.status] || "internal";
+    const code = { 400: "invalid-argument", 401: "unauthenticated", 403: "permission-denied", 404: "not-found", 409: "already-exists", 429: "resource-exhausted", 503: "unavailable" }[e.status] || "internal";
     return new HttpsError(code, e.message);
   }
   logger.error(e);
@@ -113,6 +113,7 @@ exports.createInviteCode = callable(H.createInviteCode);   // 邀請其他家人
 exports.updateGuardians = callable(H.updateGuardians);     // 通知順序、稱謂、移除
 exports.updateMyProfile = callable(H.updateMyProfile);     // 電話、名稱、通知偏好
 exports.ackIncident = callable(H.ackIncident);             // 「我來處理」
+exports.sendTestAlert = callable(H.sendTestAlert);         // 新手引導：測試警報（只發給自己）
 
 // ---- LINE webhook（在 LINE Developers 後台把 Webhook URL 設為這個函式的網址）
 exports.lineWebhook = onRequest({ secrets: [LINE_TOKEN, LINE_SECRET] }, async (req, res) => {

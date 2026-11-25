@@ -7,6 +7,31 @@ const brandTeal = Color(0xFF1F6F66);
 const brandTealLight = Color(0xFFE3F1EE);
 const brandCream = Color(0xFFFBF8F3);
 const alertRed = Color(0xFFB3261E);
+const brandLine = Color(0xFFE6E0D6);
+const brandInk = Color(0xFF1D2B2A);
+const brandMuted = Color(0xFF5B6B68);
+const okGreen = Color(0xFF2E7D4F);
+const amber = Color(0xFF8A5A00);
+const amberLight = Color(0xFFFFF1D6);
+const robotBg = Color(0xFF10201E);
+const robotEye = Color(0xFF7FE0CC);
+
+/// 白底卡片＋細框（設計稿的卡片樣式）。
+final cardDecoration = BoxDecoration(color: Colors.white, border: Border.all(color: brandLine), borderRadius: BorderRadius.circular(18));
+final bigButton = FilledButton.styleFrom(minimumSize: const Size.fromHeight(56), textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)));
+
+/// 服務條款與隱私權政策（放在 Firebase Hosting 的 legal/ 底下）。
+/// 建置時可用 --dart-define=NEARA_WEB=https://你的網址 換掉預設值。
+const webBase = String.fromEnvironment('NEARA_WEB', defaultValue: 'https://neara-prod.web.app');
+const termsUrl = '$webBase/legal/terms.html';
+const privacyUrl = '$webBase/legal/privacy.html';
+
+/// 機器人超過 3 分鐘沒回報就算離線。
+bool isOnline(Map<String, dynamic> d) {
+  final last = d['lastSeen'] as num?;
+  return last != null && DateTime.now().millisecondsSinceEpoch - last < 3 * 60 * 1000;
+}
 
 /// 監護人通知順序（與後端 guardianOrder 相同規則）。
 List<String> guardianOrder(Map<String, dynamic> d) {
@@ -39,10 +64,10 @@ String until(num ms) {
 
 /// 事件狀態 → 標籤文字與顏色。
 (String, Color) statusOf(Map<String, dynamic> x) {
-  if (x['outcome'] == 'ALERTED' && x['resolved'] == null) return ('警報中', const Color(0xFFD93025));
-  if (x['resolved'] != null) return ('已結案', Colors.grey);
-  if (x['outcome'] == 'CANCELLED') return ('長者表示沒事', const Color(0xFF188038));
-  return ('確認中', const Color(0xFFB06000));
+  if (x['outcome'] == 'ALERTED' && x['resolved'] == null) return ('警報中', alertRed);
+  if (x['resolved'] != null) return ('已結案', const Color(0xFF8A8F8C));
+  if (x['outcome'] == 'CANCELLED') return ('長輩表示沒事，已取消', okGreen);
+  return ('確認中', amber);
 }
 
 void toast(BuildContext context, String msg) =>

@@ -26,7 +26,6 @@ class Notifications {
     await android?.createNotificationChannel(_critical);
     await android?.createNotificationChannel(_info);
 
-    await FirebaseMessaging.instance.requestPermission(alert: true, sound: true, badge: true, criticalAlert: true);
     FirebaseMessaging.onMessage.listen((m) {
       final n = m.notification;
       if (n == null) return;
@@ -45,6 +44,15 @@ class Notifications {
     if (initial != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _open('${initial.data['deviceId']}|${initial.data['incidentId']}'));
     }
+  }
+
+  /// 要求通知權限（新手引導第一步按「同意並繼續」時呼叫；已同意過不會再問）。
+  static Future<void> requestPermission() async {
+    try {
+      await FirebaseMessaging.instance.requestPermission(alert: true, sound: true, badge: true, criticalAlert: true);
+      final android = _local.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await android?.requestNotificationsPermission(); // Android 13 以上
+    } catch (_) {}
   }
 
   static Future<void> registerToken(String uid) async {

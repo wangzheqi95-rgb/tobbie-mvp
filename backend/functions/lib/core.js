@@ -167,7 +167,24 @@ function normalizePhone(p) {
   return /^\+?\d{8,15}$/.test(s) ? s : null;
 }
 
+/**
+ * 長輩資料（設計稿的表單欄位）→ 整理成一段文字，給機器人與事件報告用。
+ * 回傳 { elder: 清理過的欄位, profile: 文字 }。
+ */
+function elderProfile(input) {
+  const pick = (k, n) => (typeof input[k] === "string" ? input[k].trim().slice(0, n) : "");
+  const elder = { age: pick("age", 3).replace(/\D/g, ""), living: pick("living", 20), meds: pick("meds", 300), allergies: pick("allergies", 200), history: pick("history", 500) };
+  const lines = [];
+  const head = [elder.age && `${elder.age} 歲`, elder.living].filter(Boolean).join("，");
+  if (head) lines.push(head);
+  if (elder.meds) lines.push(`慣用藥物：${elder.meds}`);
+  if (elder.allergies) lines.push(`過敏：${elder.allergies}`);
+  if (elder.history) lines.push(`病史與注意事項：${elder.history}`);
+  return { elder, profile: lines.join("\n") };
+}
+
 module.exports = {
+  elderProfile,
   ESCALATE_MS, OFFLINE_MS, RELATIONS, DEFAULT_PREFS, prefsOf, guardianOrder, centerEnabled, escalationStep,
   vitalsAround, mergeHeartRate, taipeiDayStart, normalizePhone,
   PAIRING_TTL_MS, RETENTION_DAYS, sha256, newDeviceKey, newPairingCode, newLinkCode,

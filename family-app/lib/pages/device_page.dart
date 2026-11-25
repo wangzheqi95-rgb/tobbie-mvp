@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../util.dart';
+import 'elder_page.dart';
 import 'guardians_page.dart';
 import 'incident_page.dart';
 import 'smart_devices_page.dart';
@@ -20,7 +21,8 @@ class DevicePage extends StatelessWidget {
         final d = ds.data?.data() ?? {};
         return Scaffold(
           appBar: AppBar(title: Text((d['elderName'] as String?)?.isNotEmpty == true ? d['elderName'] : '機器人'), actions: [
-            IconButton(icon: const Icon(Icons.edit), tooltip: '編輯長者資料', onPressed: () => _edit(context, d)),
+            IconButton(icon: const Icon(Icons.edit), tooltip: '編輯長輩資料',
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ElderPage(deviceId: deviceId)))),
           ]),
           body: ListView(children: [
             Card(
@@ -82,27 +84,4 @@ class DevicePage extends StatelessWidget {
     );
   }
 
-  Future<void> _edit(BuildContext context, Map<String, dynamic> d) async {
-    final name = TextEditingController(text: d['elderName'] ?? '');
-    final profile = TextEditingController(text: d['profile'] ?? '');
-    final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
-      title: const Text('長者資料'),
-      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        TextField(controller: name, decoration: const InputDecoration(labelText: '機器人怎麼稱呼長輩（例如：阿嬤）')),
-        TextField(controller: profile, minLines: 4, maxLines: 8,
-            decoration: const InputDecoration(labelText: '年齡、慣用藥物、過敏、病史、緊急聯絡人')),
-      ])),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('儲存')),
-      ],
-    ));
-    if (ok != true || !context.mounted) return;
-    try {
-      await functions.httpsCallable('updateDeviceConfig').call({'deviceId': deviceId, 'elderName': name.text.trim(), 'profile': profile.text.trim()});
-      if (context.mounted) toast(context, '已儲存，機器人一分鐘內會同步');
-    } catch (e) {
-      if (context.mounted) toast(context, '儲存失敗：${errText(e)}');
-    }
-  }
 }
