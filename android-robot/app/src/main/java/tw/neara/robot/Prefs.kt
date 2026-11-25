@@ -33,6 +33,7 @@ class Prefs(ctx: Context) {
     var healthLastSync: Long by long("healthLastSync", 0L)
     var autoCall: Boolean by bool("autoCall", true)             // 警報時用這支手機的 SIM 卡撥給家人
     var callListJson: String by str("callList", "[]")           // 後端心跳帶來的撥號清單（依監護人順序）
+    var fcmToken: String? by str("fcmToken")                    // 視訊來電推播
 
     // ---- 小工具：用屬性代理讀寫 SharedPreferences
     private fun str(k: String, d: String) = object : kotlin.properties.ReadWriteProperty<Any, String> {

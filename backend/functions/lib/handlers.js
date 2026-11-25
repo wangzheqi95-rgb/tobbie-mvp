@@ -66,6 +66,10 @@ async function heartbeat(deps, dev, body) {
     lastSeen: deps.now(), offlineNotified: false, state: String(body.state || "").slice(0, 20),
     chassis: String(body.chassis || "").slice(0, 40), appVersion: String(body.appVersion || "").slice(0, 20),
   };
+  // 長輩上次跟機器人說話的時間（家屬 App 首頁「上次聊天」）
+  if (Number.isFinite(body.lastTalkAt) && body.lastTalkAt <= deps.now() + 60000) patch.lastTalkAt = body.lastTalkAt;
+  // 機器人的推播 token（視訊來電響鈴用）
+  if (typeof body.fcmToken === "string" && body.fcmToken.length < 4096) patch.fcmToken = body.fcmToken;
   // 智慧裝置連線狀態（目前：Health Connect 手錶）
   if (body.integrations && typeof body.integrations === "object") {
     const hc = body.integrations.healthConnect;
@@ -78,6 +82,7 @@ async function heartbeat(deps, dev, body) {
   const acked = await dev.ref.collection("incidents").where("ackAt", ">", since).get();
   return {
     ok: true,
+    paired: (dev.data.members || []).length > 0,
     config: { ...configOf(dev.data), callList: await callListOf(deps, dev.data) },
     resolvedIncidents: resolved.docs.map((d) => d.id),
     ackedIncidents: acked.docs.map((d) => ({ id: d.id, by: d.data().ackByName || "家人" })),

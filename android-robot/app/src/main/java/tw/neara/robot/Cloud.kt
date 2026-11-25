@@ -50,7 +50,7 @@ class Cloud(private val prefs: Prefs, private val filesDir: File) {
     }
 
     /** 心跳結果：被遠端結案的事件、被家人按「我來處理」的事件（事件 ID → 誰）。 */
-    data class Beat(val resolved: List<String> = emptyList(), val acked: Map<String, String> = emptyMap())
+    data class Beat(val resolved: List<String> = emptyList(), val acked: Map<String, String> = emptyMap(), val paired: Boolean? = null)
 
     /** 撥號清單（依監護人順序）：名字＋電話。 */
     fun callList(): List<Pair<String, String>> = runCatching {
@@ -59,11 +59,13 @@ class Cloud(private val prefs: Prefs, private val filesDir: File) {
     }.getOrDefault(emptyList())
 
     /** 心跳：回報狀態，順便拿家屬在 App 改的設定（稱呼、長者資料、撥號清單）。 */
-    suspend fun heartbeat(state: String, chassis: String, healthStatus: String): Beat = withContext(Dispatchers.IO) {
+    suspend fun heartbeat(state: String, chassis: String, healthStatus: String, lastTalkAt: Long): Beat = withContext(Dispatchers.IO) {
         if (!enabled || prefs.deviceKey == null) return@withContext Beat()
         runCatching {
             val body = JSONObject().put("state", state).put("chassis", chassis).put("appVersion", BuildConfig.VERSION_NAME)
                 .put("integrations", JSONObject().put("healthConnect", healthStatus))
+            if (lastTalkAt > 0) body.put("lastTalkAt", lastTalkAt)
+            prefs.fcmToken?.let { body.put("fcmToken", it) } // 視訊來電用的推播 token
             val r = req("POST", "/api/device/heartbeat", body.toString())
             r.optJSONObject("config")?.let { cfg ->
                 cfg.optString("elderName").takeIf { it.isNotBlank() }?.let { prefs.elderName = it }
@@ -75,6 +77,7 @@ class Cloud(private val prefs: Prefs, private val filesDir: File) {
             Beat(
                 List(ids?.length() ?: 0) { ids!!.getString(it) },
                 (0 until (acks?.length() ?: 0)).associate { acks!!.getJSONObject(it).let { o -> o.optString("id") to o.optString("by", "家人") } },
+                if (r.has("paired")) r.optBoolean("paired") else null,
             )
         }.onFailure { lastError = it.message }.getOrDefault(Beat())
     }

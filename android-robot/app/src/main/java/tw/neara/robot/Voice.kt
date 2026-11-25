@@ -26,6 +26,8 @@ import java.util.concurrent.ConcurrentHashMap
 class Voice(private val ctx: Context, private val prefs: Prefs) {
     private val pending = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
     private var ready = false
+    /** 開始／停止說話（表情臉的嘴巴跟著動）。在 TTS 執行緒呼叫。 */
+    var onSpeaking: ((Boolean) -> Unit)? = null
     private val tts: TextToSpeech = TextToSpeech(ctx) { status ->
         ready = status == TextToSpeech.SUCCESS
         if (ready) {
@@ -36,8 +38,8 @@ class Voice(private val ctx: Context, private val prefs: Prefs) {
 
     init {
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(id: String?) {}
-            override fun onDone(id: String?) { id?.let { pending.remove(it)?.complete(Unit) } }
+            override fun onStart(id: String?) { onSpeaking?.invoke(true) }
+            override fun onDone(id: String?) { onSpeaking?.invoke(false); id?.let { pending.remove(it)?.complete(Unit) } }
             @Deprecated("Deprecated in Java")
             override fun onError(id: String?) { id?.let { pending.remove(it)?.complete(Unit) } }
             override fun onError(id: String?, errorCode: Int) { id?.let { pending.remove(it)?.complete(Unit) } }

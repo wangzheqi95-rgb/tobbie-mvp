@@ -37,6 +37,7 @@ enum class FallReason(val label: String) {
     VANISH("長者往下掉後消失在畫面中"),
     CHAT("聊天中提到緊急狀況"),
     RADAR("毫米波雷達偵測到跌倒"),
+    BUTTON("長輩按下「我需要幫忙」"),
     TEST("（測試）模擬跌倒"),
 }
 

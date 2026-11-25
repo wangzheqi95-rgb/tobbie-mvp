@@ -1,156 +1,200 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  機器人主畫面（照設計稿）：長輩看到的是表情臉＋一句話＋兩顆大按鈕。
+  鏡頭畫面與偵測資訊放在「維護面板」，長按上方狀態列 2 秒才會出現（給安裝人員與家屬用）。
+-->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#000000">
+    android:background="#10201E">
 
-    <androidx.camera.view.PreviewView
-        android:id="@+id/preview"
+    <!-- 長輩看到的表情臉 -->
+    <LinearLayout
+        android:id="@+id/faceLayer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:scaleType="fitCenter" />
-
-    <tw.neara.robot.OverlayView
-        android:id="@+id/overlay"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top"
         android:orientation="vertical"
-        android:padding="12dp">
+        android:paddingHorizontal="24dp"
+        android:paddingTop="20dp"
+        android:paddingBottom="24dp">
 
         <LinearLayout
+            android:id="@+id/statusRow"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/title"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Neara"
-                android:textColor="#FFFFFF"
-                android:textSize="18sp"
-                android:textStyle="bold" />
+            <View
+                android:id="@+id/statusDot"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:background="@drawable/dot" />
 
             <TextView
                 android:id="@+id/state"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:text="啟動中"
+                android:textColor="#8FB8B1"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/clock"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="#1A1D24"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="4dp"
-                android:text="未啟動"
-                android:textColor="#FFFFFF"
-                android:textSize="14sp" />
+                android:textColor="#8FB8B1"
+                android:textSize="16sp" />
         </LinearLayout>
+
+        <tw.neara.robot.FaceView
+            android:id="@+id/face"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
 
         <TextView
             android:id="@+id/bubble"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:background="#E0A142F4"
-            android:padding="10dp"
-            android:textColor="#FFFFFF"
-            android:textSize="20sp"
+            android:gravity="center"
+            android:lineSpacingMultiplier="1.3"
+            android:minHeight="96dp"
+            android:textColor="#E3F1EE"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/detail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:textColor="#B9D3CE"
+            android:textSize="18sp"
             android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnLeft"
+                android:layout_width="0dp"
+                android:layout_height="80dp"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                app:cornerRadius="22dp"
+                app:backgroundTint="#1F6F66"
+                android:text="聊天"
+                android:textColor="#FFFFFF"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnRight"
+                android:layout_width="0dp"
+                android:layout_height="80dp"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                app:cornerRadius="22dp"
+                app:backgroundTint="#B3261E"
+                android:text="我需要幫忙"
+                android:textColor="#FFFFFF"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/pairing"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textColor="#9AA0A6"
-            android:textSize="13sp" />
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:text="鏡頭只分析身體姿勢，不錄影"
+            android:textColor="#8FB8B1"
+            android:textSize="14sp" />
     </LinearLayout>
 
-    <LinearLayout
+    <!-- 維護面板：鏡頭畫面、骨架、偵測資訊、測試按鈕、設定 -->
+    <FrameLayout
+        android:id="@+id/debugLayer"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:background="#99000000"
-        android:orientation="vertical"
-        android:padding="8dp">
+        android:layout_height="match_parent"
+        android:background="#000000"
+        android:visibility="gone">
 
-        <TextView
-            android:id="@+id/info"
+        <androidx.camera.view.PreviewView
+            android:id="@+id/preview"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="啟動中…"
-            android:textColor="#E8EAED"
-            android:textSize="14sp" />
+            android:layout_height="match_parent"
+            android:scaleType="fitCenter" />
+
+        <tw.neara.robot.OverlayView
+            android:id="@+id/overlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:orientation="horizontal">
+            android:layout_gravity="bottom"
+            android:background="#99000000"
+            android:orientation="vertical"
+            android:padding="8dp">
 
-            <Button
-                android:id="@+id/btnTest"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="0dp"
+            <TextView
+                android:id="@+id/info"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="模擬跌倒" />
+                android:text="啟動中…"
+                android:textColor="#E8EAED"
+                android:textSize="14sp" />
 
-            <Button
-                android:id="@+id/btnChat"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="0dp"
+            <TextView
+                android:id="@+id/debugPairing"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginHorizontal="6dp"
-                android:layout_weight="1"
-                android:text="主動問候" />
+                android:textColor="#9AA0A6"
+                android:textSize="13sp" />
 
-            <Button
-                android:id="@+id/btnSettings"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="0dp"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="設定" />
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnTest"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="模擬跌倒" />
+
+                <Button
+                    android:id="@+id/btnSettings"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="6dp"
+                    android:layout_weight="1"
+                    android:text="設定" />
+
+                <Button
+                    android:id="@+id/btnCloseDebug"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="回到表情臉" />
+            </LinearLayout>
         </LinearLayout>
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/alarm"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="#E6EA4335"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:padding="24dp"
-        android:visibility="gone">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="⚠ 偵測到跌倒"
-            android:textColor="#FFFFFF"
-            android:textSize="30sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/alarmText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:gravity="center"
-            android:textColor="#FFFFFF"
-            android:textSize="18sp" />
-
-        <Button
-            android:id="@+id/btnClear"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="解除警報" />
-    </LinearLayout>
+    </FrameLayout>
 </FrameLayout>

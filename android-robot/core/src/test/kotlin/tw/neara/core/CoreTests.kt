@@ -126,6 +126,16 @@ fun main(args: Array<String>) {
         check("接手台詞", ackLine("阿嬤", "大明").contains("大明已經收到通知"))
     }
 
+    run {
+        check("表情：警報是紅色表情", moodFor(CareState.ALERT) == Mood.ALARM)
+        check("表情：詢問中是擔心表情", moodFor(CareState.CONFIRM) == Mood.WORRIED)
+        check("按鈕：詢問中是「我沒事／我需要幫忙」", buttonsFor(CareState.CONFIRM) == (FaceButton.OK to FaceButton.HELP))
+        check("按鈕：警報中是「打 119／我沒事了」", buttonsFor(CareState.ALERT) == (FaceButton.CALL_119 to FaceButton.OK_NOW))
+        check("按鈕：平常是「聊天／我需要幫忙」", buttonsFor(CareState.MONITOR) == (FaceButton.CHAT to FaceButton.HELP))
+        check("問候語：晚上說晚安", idleCaption("阿嬤", 20).startsWith("阿嬤，晚安"))
+        check("每個狀態都有表情與按鈕", CareState.values().all { moodFor(it).name.isNotEmpty() && buttonsFor(it).first != buttonsFor(it).second })
+    }
+
     println(if (failures == 0) "ALL PASS" else "$failures FAILED")
     if (failures > 0) kotlin.system.exitProcess(1)
 }

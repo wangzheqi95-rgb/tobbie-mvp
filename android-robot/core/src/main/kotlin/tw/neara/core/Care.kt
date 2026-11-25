@@ -80,3 +80,32 @@ class CallPlan(private val size: Int, private val gapMs: Long = 180_000) {
 
 /** 家人接手後，機器人對長輩說的話。 */
 fun ackLine(name: String, by: String) = "${name}，${by}已經收到通知，正在處理了，我會陪著您。"
+
+/** 表情臉的表情（對應設計稿：平常青綠、聊天開心、詢問琥珀、警報紅）。 */
+enum class Mood { SLEEP, CALM, HAPPY, WORRIED, ALARM }
+
+fun moodFor(s: CareState): Mood = when (s) {
+    CareState.IDLE -> Mood.SLEEP
+    CareState.MONITOR, CareState.COOLDOWN -> Mood.CALM
+    CareState.CHAT -> Mood.HAPPY
+    CareState.SUSPECT, CareState.NAVIGATE, CareState.CONFIRM -> Mood.WORRIED
+    CareState.ALERT -> Mood.ALARM
+}
+
+/** 表情臉下方兩顆大按鈕要顯示什麼（左、右）。 */
+enum class FaceButton(val label: String) {
+    CHAT("聊天"), END_CHAT("不聊了"), OK("我沒事"), HELP("我需要幫忙"), CALL_119("打 119"), OK_NOW("我沒事了")
+}
+
+fun buttonsFor(s: CareState): Pair<FaceButton, FaceButton> = when (s) {
+    CareState.CHAT -> FaceButton.END_CHAT to FaceButton.HELP
+    CareState.SUSPECT, CareState.NAVIGATE, CareState.CONFIRM -> FaceButton.OK to FaceButton.HELP
+    CareState.ALERT -> FaceButton.CALL_119 to FaceButton.OK_NOW
+    else -> FaceButton.CHAT to FaceButton.HELP
+}
+
+/** 平常狀態畫面上的話。 */
+fun idleCaption(name: String, hour: Int): String {
+    val hi = when { hour < 5 -> "晚安"; hour < 11 -> "早安"; hour < 18 -> "午安"; else -> "晚安" }
+    return "${name}，${hi}。\n需要我就按「聊天」。"
+}

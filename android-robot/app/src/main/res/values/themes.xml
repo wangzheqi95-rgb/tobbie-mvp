@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Neara" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">#4F8CFF</item>
+        <item name="colorPrimary">#1F6F66</item>
         <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="android:windowBackground">#0F1115</item>
-        <item name="android:statusBarColor">#0F1115</item>
+        <item name="android:windowBackground">#10201E</item>
+        <item name="android:statusBarColor">#10201E</item>
     </style>
 </resources>

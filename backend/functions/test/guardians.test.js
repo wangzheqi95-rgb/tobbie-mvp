@@ -133,7 +133,9 @@ test("一般通知依偏好；調整順序、移除、權限", async () => {
 
   // 心跳帶回撥號清單（依順序、只含有電話且沒關自動來電的人）
   await H.updateMyProfile(d, "mei", { phone: "0912-345-678" });
-  const hb = await H.route(d, req("POST", "/api/device/heartbeat", { state: "MONITOR", integrations: { healthConnect: "NO_PERMISSION" } }, auth));
+  const hb = await H.route(d, req("POST", "/api/device/heartbeat", { state: "MONITOR", integrations: { healthConnect: "NO_PERMISSION" }, lastTalkAt: d.now() - 1000 }, auth));
+  assert.equal(hb.paired, true);
+  assert.equal(f.store.docs.get(`devices/${devId}`).lastTalkAt, d.now() - 1000);
   assert.deepEqual(hb.config.callList, [{ name: "小美", phone: "0912345678" }]);
   await H.updateMyProfile(d, "mei", { notifyPrefs: { autoCall: false } });
   const hb2 = await H.route(d, req("POST", "/api/device/heartbeat", {}, auth));

@@ -37,6 +37,8 @@ interface CareUi {
     fun log(text: String)
     /** 用這支手機的 SIM 卡撥電話（開擴音）；回傳是否成功撥出。 */
     fun placeCall(name: String, phone: String): Boolean
+    /** 後端告訴我們有沒有家人綁定（沒有的話畫面顯示配對碼）。 */
+    fun paired(yes: Boolean) {}
 }
 
 /**
@@ -71,6 +73,10 @@ class CareController(
     private var callPlan: CallPlan? = null
     private var callList: List<Pair<String, String>> = emptyList()
     private var ackedBy: String? = null
+    /** 長輩在詢問時直接按了畫面上的「我沒事」或「我需要幫忙」。 */
+    @Volatile private var buttonAnswer: Answer? = null
+    /** 長輩上次真的有跟機器人說話的時間（回報給家屬 App 的「上次聊天」）。 */
+    private var lastTalkAt = 0L
 
     private val name get() = prefs.elderName.ifBlank { "您" }
     private fun now() = System.currentTimeMillis()
@@ -141,6 +147,7 @@ class CareController(
 
     private fun fall(px: Double, reason: FallReason) {
         if (state in setOf(CareState.NAVIGATE, CareState.CONFIRM, CareState.ALERT)) return
+        buttonAnswer = null
         chatJob?.cancel(); voice.cancelListening(); voice.stopSpeaking(); ui.bubble(null)
         scope.launch { fallFlow(px, reason) }
     }
@@ -155,26 +162,38 @@ class CareController(
         incident = inc; collecting += inc
         cloud.saveIncident(inc, jpeg, isNew = true)
 
-        // NAVIGATE：最多 8 秒，失敗也照常往下問
-        ui.info("前往長者身邊…")
         val dir = dirFor(px)
-        val moved = withTimeoutOrNull(8000) { runCatching { chassis.navigate(dir, prefs.turnMs, prefs.approachMs) }.isSuccess }
-        if (moved != true) ui.log("底盤移動失敗或逾時（流程照常進行）")
-
-        // CONFIRM：最多問兩次
-        setState(CareState.CONFIRM)
-        val prompts = listOf(Lines.ask1(name, reason), Lines.ask2(name))
         var result = Answer.NONE
-        for ((i, p) in prompts.withIndex()) {
-            ui.bubble(p); inc.say("機器人", p, now()); voice.speak(p)
-            ui.info("聆聽中（第 ${i + 1} 次）…")
-            val heard = voice.listen(8, earlyStop = true)
-            val verdict = when (heard.answer) { Answer.OK -> "沒事"; Answer.HELP -> "求救"; else -> "無法判斷" }
-            inc.say(name, "${heard.text.ifBlank { "（沒有回應）" }}　→ 判讀：$verdict", now())
-            ui.log("第 ${i + 1} 次回應：${heard.text.ifBlank { "（沒有回應）" }} → $verdict")
-            result = heard.answer
-            if (result != Answer.NONE) break
+        if (reason == FallReason.BUTTON) {
+            // 長輩自己按「我需要幫忙」：不用再問，直接通知家人
+            inc.say(name, "按下「我需要幫忙」", now())
+            result = Answer.HELP
+        } else {
+            // NAVIGATE：最多 8 秒，失敗也照常往下問
+            ui.info("前往長者身邊…")
+            val moved = withTimeoutOrNull(8000) { runCatching { chassis.navigate(dir, prefs.turnMs, prefs.approachMs) }.isSuccess }
+            if (moved != true) ui.log("底盤移動失敗或逾時（流程照常進行）")
+
+            // CONFIRM：最多問兩次；長輩也可以直接按畫面上的按鈕回答
+            setState(CareState.CONFIRM)
+            val prompts = listOf(Lines.ask1(name, reason), Lines.ask2(name))
+            for ((i, p) in prompts.withIndex()) {
+                buttonAnswer?.let { result = it }
+                if (result != Answer.NONE) break
+                ui.bubble(p); inc.say("機器人", p, now()); voice.speak(p)
+                ui.info("聆聽中（第 ${i + 1} 次）…")
+                val heard = voice.listen(8, earlyStop = true)
+                val pressed = buttonAnswer
+                val answer = pressed ?: heard.answer
+                val verdict = when (answer) { Answer.OK -> "沒事"; Answer.HELP -> "求救"; else -> "無法判斷" }
+                val said = if (pressed != null) "按下「${if (pressed == Answer.OK) "我沒事" else "我需要幫忙"}」" else heard.text.ifBlank { "（沒有回應）" }
+                inc.say(name, "$said　→ 判讀：$verdict", now())
+                ui.log("第 ${i + 1} 次回應：$said → $verdict")
+                result = answer
+                if (result != Answer.NONE) break
+            }
         }
+        buttonAnswer = null
 
         if (result == Answer.OK) {
             ui.bubble(Lines.RELIEF); inc.say("機器人", Lines.RELIEF, now()); voice.speak(Lines.RELIEF)
@@ -228,6 +247,39 @@ class CareController(
         scope.launch { voice.speak(line); cloud.saveIncident(inc, null, false) }
     }
 
+    // ---------------------------------------------------------------- 表情臉上的大按鈕
+    /** 「我沒事」（詢問中）／「我沒事了」（警報中）。 */
+    fun okButton() {
+        when (state) {
+            CareState.NAVIGATE, CareState.CONFIRM -> { buttonAnswer = Answer.OK; voice.cancelListening(); voice.stopSpeaking() }
+            CareState.ALERT -> clearAlarm("長輩按下「我沒事了」")
+            else -> {}
+        }
+    }
+
+    /** 「我需要幫忙」：詢問中＝回答求救；平常或聊天中＝直接通知家人。 */
+    fun helpButton() {
+        when (state) {
+            CareState.NAVIGATE, CareState.CONFIRM -> { buttonAnswer = Answer.HELP; voice.cancelListening(); voice.stopSpeaking() }
+            CareState.ALERT -> {}
+            else -> fall(detector.lastPx, FallReason.BUTTON)
+        }
+    }
+
+    /** 警報中的「打 119」（用這支手機的 SIM 卡）。 */
+    fun call119() {
+        alarmSound.stop()
+        val ok = ui.placeCall("119", "119")
+        incident?.let { inc -> inc.say("系統", if (ok) "長輩在機器人上撥打 119" else "撥打 119 失敗（請確認 SIM 卡與電話權限）", now()); scope.launch { cloud.saveIncident(inc, null, false) } }
+    }
+
+    /** 聊天中按「不聊了」。 */
+    fun endChatButton() {
+        if (state != CareState.CHAT) return
+        chatJob?.cancel(); voice.cancelListening(); voice.stopSpeaking()
+        endChat()
+    }
+
     /** 現場的人按「解除警報」。 */
     fun clearAlarm(by: String = "現場解除") {
         callPlan = null
@@ -264,6 +316,7 @@ class CareController(
                 val said = voice.listen(9, earlyStop = false).text.trim()
                 if (said.isEmpty()) { ui.bubble(Lines.CHAT_NO_REPLY); voice.speak(Lines.CHAT_NO_REPLY); break }
                 ui.log("$name：$said")
+                lastTalkAt = now()
                 if (Replies.isEmergency(said)) { endChat(); fall(detector.lastPx, FallReason.CHAT); return@launch }
                 if (Replies.isBye(said)) { ui.bubble(Lines.CHAT_BYE); voice.speak(Lines.CHAT_BYE); break }
                 history += "user" to said
@@ -286,7 +339,8 @@ class CareController(
         var lastFull = 0L
         var lastHealth = 0L
         while (scope.isActive) {
-            val beat = cloud.heartbeat(state.name, chassis.name, health.status)
+            val beat = cloud.heartbeat(state.name, chassis.name, health.status, lastTalkAt)
+            beat.paired?.let { ui.paired(it) }
             val inc = incident
             if (state == CareState.ALERT && inc != null) {
                 beat.acked[inc.id]?.let { onAcked(inc, it) }

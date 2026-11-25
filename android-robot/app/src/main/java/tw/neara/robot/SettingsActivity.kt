@@ -14,7 +14,10 @@ import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import tw.neara.core.MiioCodec
@@ -56,9 +59,22 @@ class SettingsActivity : AppCompatActivity() {
         text("稱呼", { prefs.elderName }, { prefs.elderName = it })
         text("基本資料、慣用藥物、過敏、緊急聯絡人（印在事件報告上）", { prefs.profile }, { prefs.profile = it }, lines = 4)
 
-        title("雲端後端")
+        title("雲端後端與家屬配對")
         text("後端網址（Cloud Functions）", { prefs.backendUrl }, { prefs.backendUrl = it }, InputType.TYPE_TEXT_VARIATION_URI)
         hint("裝置 ID：${prefs.deviceId}")
+        col.addView(Button(this).apply {
+            text = "產生家屬配對碼"
+            setOnClickListener {
+                lifecycleScope.launch {
+                    val cloud = Cloud(prefs, filesDir)
+                    val code = cloud.ensureRegistered()
+                    AlertDialog.Builder(this@SettingsActivity)
+                        .setTitle(if (code != null) "家屬配對碼" else "無法產生配對碼")
+                        .setMessage(if (code != null) "$code\n\n請在家屬 App 的「新增長輩」輸入，10 分鐘內有效。" else (cloud.lastError ?: "請先填後端網址並確認網路"))
+                        .setPositiveButton("好", null).show()
+                }
+            }
+        })
 
         title("底盤")
         col.addView(TextView(this).apply { text = "底盤種類" })
