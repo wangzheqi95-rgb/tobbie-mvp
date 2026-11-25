@@ -66,10 +66,10 @@
   <h2>系統</h2>
   <div class="row">
     <button class="primary" id="btnStart">啟動系統</button>
-    <button id="btnConnect">連線 Tobbie</button>
+    <button id="btnConnect">連線底盤</button>
     <button id="btnFlip" disabled>切換鏡頭</button>
   </div>
-  <div class="muted" id="robotStatus" style="margin-top:8px;font-size:13px;">Tobbie：未連線</div>
+  <div class="muted" id="robotStatus" style="margin-top:8px;font-size:13px;">底盤：未連線</div>
 </div>
 
 <div class="panel">
@@ -84,15 +84,18 @@
 </div>
 
 <div class="panel">
-  <h2>Tobbie 手動控制</h2>
+  <h2>底盤手動控制</h2>
   <div class="row">
     <button data-cmd="L">左轉</button>
     <button data-cmd="S">停止</button>
     <button data-cmd="R">右轉</button>
+    <button data-cmd="F">前進一點</button>
+    <button data-cmd="D">回充</button>
     <button data-cmd="H">搖頭</button>
     <button data-cmd="A">警示臉</button>
     <button data-cmd="N">正常臉</button>
   </div>
+  <div class="hint">Tobbie：左轉、右轉、停止、搖頭、警示臉、正常臉。石頭 S6：左轉、右轉、停止打掃、前進一點、回充。</div>
 </div>
 
 <div class="panel">
@@ -108,15 +111,35 @@
 </div>
 
 <div class="panel">
-  <h2>跌倒偵測與 Tobbie 設定</h2>
+  <h2>跌倒偵測與底盤設定</h2>
   <label>躺平持續幾秒才確認<input type="number" id="cfgConfirm" value="3" step="0.5" min="1"></label>
   <label><input type="checkbox" id="cfgFast" checked> 必須是「快速倒下」才算跌倒（慢慢躺下不算）</label>
+  <label>底盤
+    <select id="cfgChassis" style="flex:1 1 160px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:14px;">
+      <option value="tobbie">Tobbie II（藍牙）</option>
+      <option value="s6">石頭 S6（區網橋接）</option>
+    </select>
+  </label>
+  <label>S6 橋接網址<input type="text" id="cfgBridge" value="http://127.0.0.1:8765"></label>
+  <div class="hint">石頭 S6 要先在同一台電腦執行 s6/s6_bridge.py，並用那台電腦的 Chrome 開這個網頁。手機版要等之後的 Android App（瀏覽器不允許網頁直接連區網裡的其他裝置）。</div>
   <label>轉向時間（毫秒）<input type="number" id="cfgTurn" value="800" step="100" min="100"></label>
-  <label><input type="checkbox" id="cfgSwap"> Tobbie 左右對調（轉錯方向時勾選）</label>
+  <label>跌倒時靠近長者（毫秒，0＝不靠近）<input type="number" id="cfgApproach" value="1000" step="100" min="0" max="3000"></label>
+  <label><input type="checkbox" id="cfgSwap"> 左右對調（轉錯方向時勾選）</label>
 </div>
 
 <div class="panel">
-  <h2>事件紀錄</h2>
+  <h2>長者資料（印在緊急事件報告上）</h2>
+  <textarea id="cfgProfile" rows="4" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:8px;font-size:14px;" placeholder="例：王阿嬤，82 歲；慣用藥物：降血壓藥（早上一顆）；過敏：無；緊急聯絡人：兒子 0912-xxx-xxx"></textarea>
+  <div class="hint">由家屬事先填寫，只存在這台裝置的瀏覽器裡，不會上傳。</div>
+</div>
+
+<div class="panel">
+  <h2>緊急事件報告</h2>
+  <div id="incidents" class="muted" style="font-size:13px;">目前沒有事件。偵測到跌倒或按「模擬跌倒」後，這裡會產生一份給家屬與醫師看的報告。</div>
+</div>
+
+<div class="panel">
+  <h2>系統日誌</h2>
   <div id="log"></div>
 </div>
 
@@ -157,7 +180,8 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("tobbie." + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem("tobbie." + k, JSON.stringify(v)); } catch (e) {} },
 };
-const SETTINGS = ["cfgName", "cfgRate", "cfgPitch", "cfgKey", "cfgModel", "cfgChatMin", "cfgConfirm", "cfgFast", "cfgTurn", "cfgSwap"];
+const SETTINGS = ["cfgName", "cfgRate", "cfgPitch", "cfgKey", "cfgModel", "cfgChatMin", "cfgConfirm", "cfgFast", "cfgTurn", "cfgSwap",
+                  "cfgChassis", "cfgBridge", "cfgApproach", "cfgProfile"];
 for (const id of SETTINGS) {
   const el = $(id);
   const saved = store.get(id, null);
@@ -423,16 +447,183 @@ const robot = {
     return this.queue;
   },
 };
-async function turnToward(px) {
+// ===================== 石頭 S6（透過本機橋接程式 s6/s6_bridge.py）=====================
+const s6 = {
+  ok: false,
+  url() { return ($("cfgBridge").value.trim() || "http://127.0.0.1:8765").replace(/\/$/, ""); },
+  async call(path, body) {
+    const res = await fetch(this.url() + path, body === undefined ? {} : {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || `HTTP ${res.status}`);
+    return j;
+  },
+  async connect() {
+    const j = await this.call("/api/ping");
+    this.ok = true;
+    $("robotStatus").textContent = `石頭 S6：已連線（${j.mock ? "模擬模式" : j.model}）`;
+    log(`石頭 S6 橋接已連線${j.mock ? "（模擬模式）" : ""}`);
+  },
+};
+
+// ===================== 底盤（Tobbie 或 S6，統一介面）=====================
+const chassisType = () => $("cfgChassis").value;
+function dirFor(px) {
   let dir = px < 0.4 ? "L" : px > 0.6 ? "R" : null;
   if (dir && $("cfgSwap").checked) dir = dir === "L" ? "R" : "L";
-  if (dir) {
-    log(`Tobbie ${dir === "L" ? "左" : "右"}轉面向長者`);
-    await robot.send(dir);
-    await sleep(Number($("cfgTurn").value) || 800);
-    await robot.send("S");
+  return dir;
+}
+const chassis = {
+  async connect() { return chassisType() === "s6" ? s6.connect() : robot.connect(); },
+  async turn(dir) {
+    const ms = Number($("cfgTurn").value) || 800;
+    if (chassisType() === "s6") return s6.call("/api/turn", { dir, ms });
+    await robot.send(dir); await sleep(ms); await robot.send("S");
+  },
+  async cmd(c) {
+    if (chassisType() !== "s6") {
+      if ("LSRHAN".includes(c)) return robot.send(c);
+      return log("Tobbie 沒有這個動作（前進、回充只有石頭 S6 有）");
+    }
+    if (c === "L" || c === "R") return s6.call("/api/turn", { dir: c, ms: Number($("cfgTurn").value) || 800 });
+    if (c === "S") return s6.call("/api/stop", {});
+    if (c === "F") return s6.call("/api/move", { velocity: 0.1, ms: 1000 });
+    if (c === "D") return s6.call("/api/dock", {});
+    log("石頭 S6 沒有這個動作（搖頭、表情只有 Tobbie 有）");
+  },
+  // 提案 4.4 的 NAVIGATE：偵測到異常後先「到長者身邊」，再開口確認。
+  // Tobbie：顯示警示臉。S6：停止打掃 → 轉向長者 → 慢速靠近一小段（速度上限由橋接程式把關）。
+  async navigate(px) {
+    if (chassisType() !== "s6") { robot.send("A"); return; }
+    await s6.call("/api/stop", {});
+    const dir = dirFor(px);
+    if (dir) { log(`S6 ${dir === "L" ? "左" : "右"}轉面向長者`); await this.turn(dir); }
+    const ms = Math.min(Number($("cfgApproach").value) || 0, 3000);
+    if (ms > 0) { log("S6 慢速靠近長者"); await s6.call("/api/move", { velocity: 0.1, ms }); }
+  },
+  async alarm(px) {
+    if (chassisType() === "s6") return; // S6 在 navigate 已轉向，警報時不再移動，避免碰到長者
+    const dir = dirFor(px);
+    if (dir) { log(`Tobbie ${dir === "L" ? "左" : "右"}轉面向長者`); await this.turn(dir); }
+    await robot.send("H");
+  },
+  normal() { if (chassisType() !== "s6") robot.send("N"); },
+  clear() { if (chassisType() !== "s6") { robot.send("S"); robot.send("N"); } },
+};
+// 底盤動作失敗（例如橋接程式沒開）不能卡住跌倒詢問流程：記錄後繼續，最多等 8 秒
+async function safely(p, label) {
+  try { await Promise.race([p, sleep(8000).then(() => { throw new Error("逾時"); })]); }
+  catch (e) { log(`底盤${label}失敗：${e.message}（流程照常進行）`); }
+}
+
+// ===================== 緊急事件紀錄（提案 三-4、4.8）=====================
+// 只存骨架座標（不存影片），另加事件當下一張照片。資料只在這台裝置的記憶體裡，可下載 JSON 或開成報告列印／存 PDF。
+const PRE_MS = 60000, POST_MS = 120000;   // 事件前 60 秒、事件後 120 秒（同提案 T−60 到 T+120）
+let poseRing = [], lastRecT = 0, lastWellWall = 0;
+let incident = null;            // 目前進行中的事件
+const incidents = [];           // 本次開機以來的所有事件
+function recordPose(poses) {
+  const t = Date.now();
+  if (t - lastRecT < 100) return; // 每秒最多 10 筆
+  lastRecT = t;
+  let best = null, bestDeg = -1;
+  for (const lm of poses) { const m = measure(lm); if (m && m.deg > bestDeg) { bestDeg = m.deg; best = lm; } }
+  const f = { t, deg: best ? Math.round(bestDeg) : null, p: best ? best.map((q) => [+q.x.toFixed(3), +q.y.toFixed(3)]) : null };
+  poseRing.push(f);
+  while (poseRing.length && t - poseRing[0].t > PRE_MS) poseRing.shift();
+  for (const inc of incidents) if (t - inc.start <= POST_MS && inc.post.length < 1300) inc.post.push(f);
+}
+const fmt = (t) => t ? new Date(t).toLocaleString("zh-TW", { hour12: false }) : "—";
+function openIncident(reason, why) {
+  incident = {
+    id: `NEARA-${new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14)}`,
+    reason, why, start: Date.now(), lastWell: lastWellWall || null,
+    chassis: chassisType(), profile: $("cfgProfile").value.trim(),
+    snapshot: snapshot(), frameW: video.videoWidth || 640, frameH: video.videoHeight || 480,
+    pre: poseRing.slice(), post: [], dialog: [], outcome: "處理中", end: null, resolved: null,
+  };
+  incidents.unshift(incident);
+  renderIncidents();
+}
+function note(who, text) { if (incident) { incident.dialog.push({ t: Date.now(), who, text }); } }
+function closeIncident(outcome) {
+  if (!incident) return;
+  incident.outcome = outcome; incident.end = Date.now();
+  renderIncidents();
+}
+function renderIncidents() {
+  const box = $("incidents");
+  if (!incidents.length) return;
+  box.innerHTML = "";
+  for (const inc of incidents) {
+    const row = document.createElement("div");
+    row.style.cssText = "border-bottom:1px solid var(--line);padding:6px 0;";
+    row.innerHTML = `<div>${fmt(inc.start)}｜${inc.why}｜<b>${inc.outcome}</b>${inc.resolved ? `｜已解除（${fmt(inc.resolved)}）` : ""}</div>`;
+    const b1 = document.createElement("button"); b1.textContent = "開啟報告（可列印／存 PDF）";
+    const b2 = document.createElement("button"); b2.textContent = "下載 JSON";
+    b1.style.marginTop = b2.style.marginTop = "6px";
+    b1.onclick = () => openReport(inc); b2.onclick = () => downloadJSON(inc);
+    const r = document.createElement("div"); r.className = "row"; r.append(b1, b2);
+    row.append(r); box.append(row);
   }
-  await robot.send("H");
+}
+function downloadJSON(inc) {
+  const data = { ...inc, poseConnections: PoseLandmarker.POSE_CONNECTIONS.map((c) => [c.start, c.end]) };
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
+  a.download = `${inc.id}.json`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function openReport(inc) {
+  const gap = inc.lastWell ? (inc.start - inc.lastWell) / 1000 : null;
+  const ago = gap === null ? "" : gap < 60 ? `${Math.round(gap)} 秒` : `${Math.round(gap / 60)} 分鐘`;
+  const frames = [...inc.pre, ...inc.post].map((f) => ({ ...f, rel: (f.t - inc.start) / 1000 }));
+  const conns = PoseLandmarker.POSE_CONNECTIONS.map((c) => [c.start, c.end]);
+  const rows = [
+    ["事件編號", inc.id],
+    ["事件發生時間", fmt(inc.start)],
+    ["偵測原因", inc.why],
+    ["最後一次正常活動時間", inc.lastWell ? `${fmt(inc.lastWell)}（事件前約 ${ago}）` : "本次開機後尚未記錄到"],
+    ["處理結果", inc.outcome],
+    ["警報解除時間", fmt(inc.resolved)],
+    ["心率、血氧", "尚未串接穿戴裝置"],
+    ["底盤", inc.chassis === "s6" ? "石頭 S6" : "Tobbie II"],
+  ];
+  const html = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>緊急事件報告 ${esc(inc.id)}</title>
+<style>body{font-family:system-ui,"Noto Sans TC",sans-serif;max-width:760px;margin:24px auto;padding:0 16px;color:#111;background:#fff}
+h1{font-size:22px}h2{font-size:17px;margin-top:24px;border-bottom:2px solid #333;padding-bottom:4px}
+table{border-collapse:collapse;width:100%}td{border:1px solid #bbb;padding:6px 8px;vertical-align:top}td:first-child{width:34%;background:#f3f3f3}
+.note{font-size:12px;color:#555}canvas{background:#111;width:100%;max-width:480px;border-radius:6px}
+button{padding:8px 16px;font-size:15px;margin:4px 4px 4px 0}@media print{.noprint{display:none}}</style></head><body>
+<h1>Neara 緊急事件報告</h1>
+<p class="note">本報告只呈現紀錄，不做醫療判斷。資料由居家照護機器人自動產生。</p>
+<h2>事件摘要</h2><table>${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table>
+<h2>長者基本資料與慣用藥物</h2><p style="white-space:pre-wrap">${esc(inc.profile || "（家屬尚未填寫）")}</p>
+<h2>事件當下照片</h2>${inc.snapshot ? `<img src="${inc.snapshot}" style="max-width:100%;border-radius:6px">` : "<p>（無）</p>"}
+<h2>與長者的問答紀錄</h2><table>${inc.dialog.map((d) => `<tr><td>${esc(new Date(d.t).toLocaleTimeString("zh-TW", { hour12: false }))}｜${esc(d.who)}</td><td>${esc(d.text)}</td></tr>`).join("") || "<tr><td colspan=2>（無）</td></tr>"}</table>
+<h2>事件前後動作重播（骨架）</h2>
+<p class="note">事件前 60 秒到事件後 120 秒的身體骨架，只存關節座標、不存影片。軀幹角度 0° 為直立、90° 為平躺。</p>
+<canvas id="cv" width="${inc.frameW}" height="${inc.frameH}"></canvas>
+<div class="noprint"><button id="play">播放</button><input id="sl" type="range" min="0" max="${Math.max(frames.length - 1, 0)}" value="0" style="width:60%"></div>
+<p id="lab">—</p>
+<div class="noprint"><button onclick="print()">列印／存成 PDF</button></div>
+<script>
+const F=${JSON.stringify(frames)},C=${JSON.stringify(conns)};
+const cv=document.getElementById("cv"),g=cv.getContext("2d"),sl=document.getElementById("sl"),lab=document.getElementById("lab");
+function show(i){const f=F[i];g.fillStyle="#111";g.fillRect(0,0,cv.width,cv.height);if(!f){lab.textContent="（沒有骨架資料）";return;}
+if(f.p){g.strokeStyle=f.rel<0?"#4f8cff":"#ff6b5b";g.lineWidth=4;for(const[a,b]of C){g.beginPath();g.moveTo(f.p[a][0]*cv.width,f.p[a][1]*cv.height);g.lineTo(f.p[b][0]*cv.width,f.p[b][1]*cv.height);g.stroke();}}
+lab.textContent=(f.rel<0?"事件前 ":"事件後 ")+Math.abs(f.rel).toFixed(1)+" 秒｜"+(f.p?"軀幹角度 "+f.deg+"°":"畫面中看不到人");}
+let tm=null;document.getElementById("play").onclick=()=>{if(tm){clearInterval(tm);tm=null;return;}
+tm=setInterval(()=>{let i=+sl.value+1;if(i>=F.length){clearInterval(tm);tm=null;return;}sl.value=i;show(i);},100);};
+sl.oninput=()=>show(+sl.value);
+let z=F.findIndex(f=>f.rel>=0);sl.value=z<0?0:Math.max(0,z-20);show(+sl.value);
+<\/script></body></html>`;
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 // ===================== 跌倒流程（規則判斷，不交給 AI）=====================
@@ -443,20 +634,28 @@ async function onFall(px, reason) {
   setState("ASK");
   const why = { lying: "偵測到疑似跌倒", vanish: "長者往下掉後消失在畫面中", chat: "聊天中提到緊急狀況", test: "（測試）模擬跌倒" }[reason] || "偵測到異常";
   log(why, snapshot());
-  robot.send("A");
+  openIncident(reason, why);
+  // NAVIGATE：先到長者身邊（Tobbie 顯示警示臉；S6 停止打掃、轉向、靠近）
+  $("info").textContent = "前往長者身邊…";
+  await safely(chassis.navigate(px), "移動");
   const prompts = reason === "vanish"
     ? [`${name()}，我突然看不到您了，您還好嗎？`, `${name()}，聽得到我嗎？沒事的話，跟我說「沒事」就好喔。`]
     : [`${name()}，您還好嗎？是不是跌倒了？`, `${name()}，聽得到我嗎？沒事的話，跟我說「沒事」就好喔。`];
   for (let i = 0; i < CFG.ASK_TIMES; i++) {
     $("info").textContent = `詢問中（第 ${i + 1} 次）`;
+    note("機器人", prompts[i]);
     await speak(prompts[i]);
     $("info").textContent = "聆聽中…";
     const ans = await listen(CFG.LISTEN_SEC, true);
-    log(`第 ${i + 1} 次回應：「${ans.text || "（沒有回應）"}」→ ${ans.kind === "ok" ? "沒事" : ans.kind === "help" ? "求救" : "無法判斷"}`);
+    const verdict = ans.kind === "ok" ? "沒事" : ans.kind === "help" ? "求救" : "無法判斷";
+    note(name(), `${ans.text || "（沒有回應）"}　→ 判讀：${verdict}`);
+    log(`第 ${i + 1} 次回應：「${ans.text || "（沒有回應）"}」→ ${verdict}`);
     if (ans.kind === "ok") {
+      note("機器人", "那就好～慢慢起來，不要急喔。");
       await speak("那就好～慢慢起來，不要急喔。");
-      robot.send("N");
+      chassis.normal();
       log("長者表示沒事，取消警報");
+      closeIncident("長者表示沒事，已取消");
       startCooldown();
       return;
     }
@@ -469,9 +668,12 @@ async function raiseAlarm(px) {
   $("alarmTime").textContent = new Date().toLocaleString("zh-TW", { hour12: false });
   $("alarm").classList.add("show");
   log("警報：已通報家屬（模擬）", snapshot());
+  closeIncident("無回應或求救，已發出警報（通報家屬為模擬）");
   startBeep();
-  turnToward(px);
-  await speak(`${name()}別擔心，我已經通知您的家人了。先不要亂動，我在這裡陪您。`);
+  safely(chassis.alarm(px), "警報動作");
+  const msg = `${name()}別擔心，我已經通知您的家人了。先不要亂動，我在這裡陪您。`;
+  note("機器人", msg);
+  await speak(msg);
 }
 function startCooldown() {
   setState("COOLDOWN");
@@ -484,7 +686,8 @@ function startCooldown() {
 $("btnClear").onclick = () => {
   $("alarm").classList.remove("show");
   stopBeep(); hush();
-  robot.send("S"); robot.send("N");
+  chassis.clear();
+  if (incident && !incident.resolved) { incident.resolved = Date.now(); renderIncidents(); }
   log("警報已解除");
   startCooldown();
 };
@@ -528,6 +731,7 @@ function analyze(poses, now) {
 
   if (ms.some((m) => m.deg < CFG.UPRIGHT_DEG)) {
     lastUprightT = now;
+    lastWellWall = Date.now(); // 最後一次正常活動（有人直立）的時間，給事件報告用
     if (deg < CFG.UPRIGHT_DEG) { lyingSince = null; fastFall = false; }
   }
   if (!watching()) { $("info").textContent = `軀幹角度 ${deg.toFixed(0)}°`; return; }
@@ -605,6 +809,7 @@ function loop() {
       draw.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: "#4f8cff", lineWidth: 3 });
       draw.drawLandmarks(lm, { color: "#ffffff", radius: 3 });
     }
+    recordPose(poses);
     analyze(poses, now);
   }
   requestAnimationFrame(loop);
@@ -663,8 +868,15 @@ $("btnStart").onclick = async () => {
 
 // ===================== 按鈕 =====================
 $("btnConnect").onclick = async () => {
-  try { await robot.connect(); } catch (e) { log(`Tobbie 連線失敗：${e.message}`); }
+  try { await chassis.connect(); }
+  catch (e) {
+    log(`${chassisType() === "s6" ? "石頭 S6 橋接" : "Tobbie"}連線失敗：${e.message}`);
+    if (chassisType() === "s6") log("請確認 s6_bridge.py 已在這台電腦執行，且橋接網址正確");
+  }
 };
+$("cfgChassis").addEventListener("change", () => {
+  $("robotStatus").textContent = `${chassisType() === "s6" ? "石頭 S6" : "Tobbie"}：未連線（請按「連線底盤」）`;
+});
 $("btnFake").onclick = () => {
   if (state === "IDLE") { alert("請先啟動系統"); return; }
   onFall(0.2, "test");
@@ -687,7 +899,9 @@ $("btnAI").onclick = async () => {
   log(r ? `AI 回覆：${r}` : "AI 測試失敗，請看上面的錯誤訊息");
   if (r) speak(r);
 };
-document.querySelectorAll("button[data-cmd]").forEach((b) => { b.onclick = () => robot.send(b.dataset.cmd); });
+document.querySelectorAll("button[data-cmd]").forEach((b) => {
+  b.onclick = () => Promise.resolve(chassis.cmd(b.dataset.cmd)).catch((e) => log(`底盤指令失敗：${e.message}`));
+});
 </script>
 </body>
 </html>
