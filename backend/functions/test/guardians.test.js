@@ -202,3 +202,20 @@ test("長輩資料表單 → 整理成文字；測試警報只發給自己、每
   await H.sendTestAlert(d, "mei", { deviceId: devId });
   await assert.rejects(H.sendTestAlert(d, "stranger", { deviceId: devId }), /沒有權限/);
 });
+
+test("刪除帳號：從所有機器人移除、主要監護人由下一位遞補、刪除資料與登入帳號", async () => {
+  const { f, d, devId } = await setup();
+  const { code } = await H.createLineLinkCode(d, "ming");
+  assert.ok(f.store.docs.get(`lineLinks/${code}`));
+  const r = await H.deleteMyAccount(d, "ming");
+  assert.equal(r.devicesLeft, 1);
+  const dev = f.store.docs.get(`devices/${devId}`);
+  assert.deepEqual(dev.guardianOrder, ["mei", "hua"], "小美遞補為主要監護人");
+  assert.ok(!dev.members.includes("ming"));
+  assert.equal(dev.memberNames.ming, undefined);
+  assert.equal(f.store.docs.get("users/ming"), undefined);
+  assert.equal(f.store.docs.get(`lineLinks/${code}`), undefined);
+  assert.deepEqual(f.sent.deletedAuth, ["ming"]);
+  await H.updateGuardians(d, "mei", { deviceId: devId, remove: "hua" }); // 小美現在有主要監護人權限
+  await assert.rejects(H.deleteMyAccount(d, null), /登入/);
+});

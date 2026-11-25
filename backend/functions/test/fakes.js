@@ -30,7 +30,7 @@ class Col {
 function fakeDeps(start = 1_700_000_000_000) {
   const store = { docs: new Map() };
   const files = new Map();
-  const sent = { push: [], line: [] };
+  const sent = { push: [], line: [], deletedAuth: [] };
   let t = start;
   return {
     store, files, sent,
@@ -42,6 +42,7 @@ function fakeDeps(start = 1_700_000_000_000) {
       chat: async (name, history) => `${name}好～（收到 ${history.length} 則）`,
       sendPush: async (tokens, msg) => { sent.push.push({ tokens, msg }); return tokens.length; },
       sendLine: async (to, text) => { sent.line.push({ to, text }); },
+      deleteAuthUser: async (uid) => { sent.deletedAuth.push(uid); },
     },
   };
 }

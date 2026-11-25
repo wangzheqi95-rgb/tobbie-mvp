@@ -301,6 +301,39 @@ async function updateMyProfile(deps, uid, data) {
   return { ok: true };
 }
 
+/**
+ * 刪除帳號（Google Play／App Store 上架要求：使用者能在 App 內自己刪除）。
+ * 會：從每台機器人的監護人名單移除（如果是主要監護人，第 2 位自動遞補）、刪除使用者資料與 LINE 綁定、刪除登入帳號。
+ * 不會刪：長輩機器人的事件紀錄（屬於長輩，其他家人還需要；90 天後自動刪除）、操作紀錄（稽核用）。
+ */
+async function deleteMyAccount(deps, uid) {
+  if (!uid) throw new HttpError(401, "請先登入");
+  const uref = deps.db.collection("users").doc(uid);
+  const u = await uref.get();
+  const deviceIds = (u.exists && u.data().devices) || [];
+  let left = 0;
+  for (const did of deviceIds) {
+    const dref = deps.db.collection("devices").doc(did);
+    const ds = await dref.get();
+    if (!ds.exists || !(ds.data().members || []).includes(uid)) continue;
+    const d = ds.data();
+    const relations = { ...(d.relations || {}) }; delete relations[uid];
+    const memberNames = { ...(d.memberNames || {}) }; delete memberNames[uid];
+    await dref.update({
+      members: (d.members || []).filter((m) => m !== uid),
+      guardianOrder: C.guardianOrder(d).filter((m) => m !== uid),
+      relations, memberNames,
+    });
+    left++;
+  }
+  const links = await deps.db.collection("lineLinks").where("uid", "==", uid).get();
+  for (const l of links.docs) await l.ref.delete();
+  await uref.delete();
+  await audit(deps, uid, "deleteMyAccount", { devicesLeft: left });
+  await deps.deleteAuthUser(uid);
+  return { ok: true, devicesLeft: left };
+}
+
 /** 新手引導最後一步：發一則「測試警報」給自己，確認手機會響（不會通知其他人或守護中心）。每分鐘最多一次。 */
 async function sendTestAlert(deps, uid, data) {
   const user = await userOf(deps, uid);
@@ -531,5 +564,5 @@ async function purgeExpired(deps, incidentsQueryOlderThan) {
 module.exports = {
   HttpError, route, authDevice, register, heartbeat, postIncident, patchIncident, chat,
   bindDevice, resolveIncident, updateDeviceConfig, createLineLinkCode, lineWebhook, onIncidentWritten, purgeExpired,
-  sendTestAlert, postHealth, createInviteCode, updateGuardians, updateMyProfile, ackIncident, escalateDue, notifyOffline, dailySummary, notifyUsers,
+  deleteMyAccount, sendTestAlert, postHealth, createInviteCode, updateGuardians, updateMyProfile, ackIncident, escalateDue, notifyOffline, dailySummary, notifyUsers,
 };

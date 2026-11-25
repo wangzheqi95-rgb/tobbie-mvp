@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>隱私權政策｜Neara</title>
+<style>
+  :root { --teal:#1F6F66; --cream:#FBF8F3; --ink:#1D2B2A; --muted:#5B6B68; --line:#E6E0D6; }
+  body { margin:0; background:var(--cream); color:var(--ink); font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; line-height:1.8; }
+  main { max-width:760px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font-size:28px; margin:0 0 4px; } h2 { font-size:19px; margin:32px 0 8px; color:var(--teal); }
+  .meta { color:var(--muted); font-size:14px; }
+  .draft { background:#FFF1D6; color:#8A5A00; border-radius:12px; padding:12px 14px; margin:16px 0; font-size:14px; }
+  table { width:100%; border-collapse:collapse; font-size:15px; background:#fff; }
+  td, th { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:#E3F1EE; }
+  a { color:var(--teal); }
+</style>
+</head>
+<body><main>
+<h1>Neara 隱私權政策</h1>
+<p class="meta">版本：草稿 v0.1｜最後更新：2026 年 11 月 25 日</p>
+<div class="draft">【草稿】本文件由開發團隊依目前系統實際的資料處理方式撰寫，正式上架前須由律師依《個人資料保護法》審閱，並填入公司名稱、地址與聯絡方式（標示【待填】處）。</div>
+<p>Neara 居家照護機器人服務（以下稱「本服務」）由【待填：公司名稱】（以下稱「我們」）提供。本服務包含放在長輩家中的照護機器人、家屬 App、Neara 守護中心與雲端系統。我們只蒐集提供照護所需的資料，並說明如下。</p>
+
+<h2>一、我們蒐集哪些資料、為什麼</h2>
+<table>
+<tr><th>資料</th><th>來源</th><th>用途</th></tr>
+<tr><td>家屬帳號：Email、顯示名稱、電話、與長輩的關係</td><td>家屬自行填寫</td><td>登入、通知順序、警報時機器人自動撥號</td></tr>
+<tr><td>推播代碼、LINE 使用者代碼</td><td>家屬 App、家屬綁定 LINE 時</td><td>傳送通知與警報</td></tr>
+<tr><td>長輩資料：稱呼、年齡、居住狀況、慣用藥物、過敏、病史與注意事項</td><td>家屬自行填寫</td><td>印在事件報告上，供救護人員與醫師參考</td></tr>
+<tr><td>身體姿勢座標（骨架）</td><td>機器人鏡頭即時分析</td><td>判斷是否跌倒；事件發生時保存事件前 60 秒到後 120 秒的骨架供重播</td></tr>
+<tr><td>事件當下照片（每次事件一張）</td><td>機器人鏡頭</td><td>讓家屬與守護中心確認現場狀況</td></tr>
+<tr><td>機器人與長輩的對話文字</td><td>機器人語音辨識</td><td>判斷長輩是否需要幫忙；陪伴聊天</td></tr>
+<tr><td>心率、步數</td><td>長輩手錶（經 Health Connect，需授權）</td><td>事件報告附上事件前後心率；每日平安摘要</td></tr>
+<tr><td>機器人狀態：上線時間、底盤種類、軟體版本</td><td>機器人</td><td>離線通知、維護</td></tr>
+<tr><td>操作紀錄：誰綁定、誰接手、誰結案</td><td>系統</td><td>安全稽核、釐清責任</td></tr>
+</table>
+<p><b>我們不做的事：</b>機器人平常不錄影、不上傳鏡頭畫面；鏡頭畫面只在機器人上即時分析。視訊通話只在家屬撥打、長輩接聽（或警報中自動接通）時進行，通話內容不錄影、不保存。</p>
+
+<h2>二、保存多久</h2>
+<ul>
+<li>事件紀錄（骨架、照片、對話、心率）：90 天，之後系統每天自動刪除。</li>
+<li>心率原始資料：只保留最近 2 小時。</li>
+<li>帳號資料：直到您刪除帳號。</li>
+<li>操作紀錄：【待填：建議 1 年】，供安全稽核。</li>
+</ul>
+
+<h2>三、誰會看到</h2>
+<ul>
+<li>同一位長輩的監護人（家屬）。</li>
+<li>Neara 守護中心值班人員：只在處理警報時查看。</li>
+<li>協助我們提供服務的廠商（只用於提供本服務）：
+  Google Firebase（雲端資料庫、登入、推播，資料存放於台灣區域）、
+  Google Gemini（機器人聊天的文字會送去產生回覆，不含照片與骨架）、
+  LINE（傳送警報訊息）、Agora 聲網（視訊通話傳輸）。</li>
+<li>依法令要求，或長輩有緊急生命危險時提供給救護單位。</li>
+</ul>
+<p>我們不會出售您的資料，也不會用於廣告。</p>
+
+<h2>四、您的權利</h2>
+<p>依《個人資料保護法》第 3 條，您可以查詢、閱覽、要求複本、補充或更正、停止蒐集處理利用、刪除您的個人資料。</p>
+<ul>
+<li>刪除帳號：家屬 App →「我的」→「刪除帳號」，會立即從所有長輩的監護人名單移除並刪除您的帳號資料。</li>
+<li>取消手錶授權：在 Health Connect 取消 Neara 的授權即可。</li>
+<li>其他請求：寄信至【待填：聯絡信箱】，我們會在 30 天內回覆。</li>
+</ul>
+
+<h2>五、長輩的同意</h2>
+<p>機器人放在長輩家中，會分析長輩的姿勢與對話。請在安裝前向長輩說明本政策並取得同意；長輩隨時可以要求停用或移除機器人。</p>
+
+<h2>六、安全措施</h2>
+<p>所有連線皆加密（HTTPS）；機器人以裝置金鑰驗證，伺服器只保存金鑰雜湊；家屬只能看到自己被授權的長輩資料；守護中心帳號由管理員個別開通。</p>
+
+<h2>七、聯絡我們</h2>
+<p>【待填：公司名稱、地址、聯絡信箱、電話】</p>
+<p><a href="terms.html">服務條款</a></p>
+</main></body></html>
