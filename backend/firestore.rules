@@ -15,9 +15,10 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isStaff());
       allow create: if signedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['fcmTokens', 'displayName', 'phone']);
+        && request.resource.data.keys().hasOnly(['fcmTokens', 'displayName']);
       allow update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmTokens', 'displayName', 'phone']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmTokens', 'displayName']);
+      // 電話與通知偏好要經過 updateMyProfile 驗證格式，所以不開放直接寫
     }
 
     match /devices/{did} {
@@ -31,6 +32,11 @@ service cloud.firestore {
           allow read: if isStaff() || isMember(did);
           allow write: if false;
         }
+      }
+      // 手錶等智慧裝置的資料（由機器人經後端寫入）
+      match /health/{hid} {
+        allow read: if isStaff() || isMember(did);
+        allow write: if false;
       }
     }
 

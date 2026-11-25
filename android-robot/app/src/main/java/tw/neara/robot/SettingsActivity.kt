@@ -1,5 +1,7 @@
 package tw.neara.robot
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
 import android.view.ViewGroup
@@ -13,6 +15,8 @@ import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.PermissionController
 import tw.neara.core.MiioCodec
 
 /**
@@ -22,6 +26,10 @@ import tw.neara.core.MiioCodec
 class SettingsActivity : AppCompatActivity() {
     private lateinit var prefs: Prefs
     private val saves = mutableListOf<() -> Unit>()
+    private val askHealth = registerForActivityResult(PermissionController.createRequestPermissionResultContract()) { granted ->
+        val ok = granted.containsAll(HealthSync.PERMISSIONS)
+        Toast.makeText(this, if (ok) "已授權讀取手錶的心率與步數" else "沒有授權，手錶資料不會上傳", Toast.LENGTH_LONG).show()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -76,6 +84,21 @@ class SettingsActivity : AppCompatActivity() {
         num("語速（0.6–1.2）", { prefs.speechRate }, { prefs.speechRate = (it.toFloatOrNull() ?: 0.9f).coerceIn(0.6f, 1.2f) })
         num("音調（0.8–1.5）", { prefs.speechPitch }, { prefs.speechPitch = (it.toFloatOrNull() ?: 1.1f).coerceIn(0.8f, 1.5f) })
         text("Gemini 金鑰（只在沒有雲端後端時使用）", { prefs.geminiKey }, { prefs.geminiKey = it }, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
+
+        title("智慧裝置與緊急撥號")
+        check("串接手錶（Health Connect：心率、步數）", { prefs.healthConnect }, { prefs.healthConnect = it })
+        hint("手錶要先配對在這支手機上，並在手錶的 App 裡開啟「同步到 Health Connect」。")
+        col.addView(Button(this).apply {
+            text = "授權讀取手錶資料"
+            setOnClickListener {
+                if (HealthConnectClient.getSdkStatus(this@SettingsActivity) == HealthConnectClient.SDK_AVAILABLE) askHealth.launch(HealthSync.PERMISSIONS)
+                else runCatching {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.apps.healthdata")))
+                }.onFailure { Toast.makeText(this@SettingsActivity, "這支手機沒有 Health Connect，請先安裝", Toast.LENGTH_LONG).show() }
+            }
+        })
+        check("警報時用這支手機的 SIM 卡撥給家人（開擴音）", { prefs.autoCall }, { prefs.autoCall = it })
+        hint("撥號順序和電話由家屬 App 的「通知與監護人」設定，每 3 分鐘沒人接手就撥下一位。需要插 SIM 卡並允許「電話」權限。")
 
         title("專用裝置")
         check("螢幕固定（長者無法跳出 App）", { prefs.kioskLock }, { prefs.kioskLock = it })

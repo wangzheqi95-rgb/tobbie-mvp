@@ -49,19 +49,45 @@ class Cloud(private val prefs: Prefs, private val filesDir: File) {
         }.onFailure { lastError = it.message }.getOrNull()
     }
 
-    /** 心跳：回報狀態，順便拿家屬在 App 改的設定（稱呼、長者資料）。 */
-    /** 回傳一小時內被家屬或守護中心「遠端結案」的事件 ID。 */
-    suspend fun heartbeat(state: String, chassis: String): List<String> = withContext(Dispatchers.IO) {
-        if (!enabled || prefs.deviceKey == null) return@withContext emptyList()
+    /** 心跳結果：被遠端結案的事件、被家人按「我來處理」的事件（事件 ID → 誰）。 */
+    data class Beat(val resolved: List<String> = emptyList(), val acked: Map<String, String> = emptyMap())
+
+    /** 撥號清單（依監護人順序）：名字＋電話。 */
+    fun callList(): List<Pair<String, String>> = runCatching {
+        val a = JSONArray(prefs.callListJson)
+        List(a.length()) { a.getJSONObject(it).let { o -> o.optString("name") to o.optString("phone") } }.filter { it.second.isNotBlank() }
+    }.getOrDefault(emptyList())
+
+    /** 心跳：回報狀態，順便拿家屬在 App 改的設定（稱呼、長者資料、撥號清單）。 */
+    suspend fun heartbeat(state: String, chassis: String, healthStatus: String): Beat = withContext(Dispatchers.IO) {
+        if (!enabled || prefs.deviceKey == null) return@withContext Beat()
         runCatching {
-            val r = req("POST", "/api/device/heartbeat", Json.value(mapOf("state" to state, "chassis" to chassis, "appVersion" to BuildConfig.VERSION_NAME)))
+            val body = JSONObject().put("state", state).put("chassis", chassis).put("appVersion", BuildConfig.VERSION_NAME)
+                .put("integrations", JSONObject().put("healthConnect", healthStatus))
+            val r = req("POST", "/api/device/heartbeat", body.toString())
             r.optJSONObject("config")?.let { cfg ->
                 cfg.optString("elderName").takeIf { it.isNotBlank() }?.let { prefs.elderName = it }
                 if (cfg.has("profile")) prefs.profile = cfg.optString("profile")
+                cfg.optJSONArray("callList")?.let { prefs.callListJson = it.toString() }
             }
             val ids = r.optJSONArray("resolvedIncidents")
-            List(ids?.length() ?: 0) { ids!!.getString(it) }
-        }.onFailure { lastError = it.message }.getOrDefault(emptyList())
+            val acks = r.optJSONArray("ackedIncidents")
+            Beat(
+                List(ids?.length() ?: 0) { ids!!.getString(it) },
+                (0 until (acks?.length() ?: 0)).associate { acks!!.getJSONObject(it).let { o -> o.optString("id") to o.optString("by", "家人") } },
+            )
+        }.onFailure { lastError = it.message }.getOrDefault(Beat())
+    }
+
+    /** 上傳手錶資料（心率樣本、今天步數）。 */
+    suspend fun postHealth(hr: List<Pair<Long, Long>>, stepsToday: Long?): Boolean = withContext(Dispatchers.IO) {
+        if (!enabled || prefs.deviceKey == null) return@withContext false
+        runCatching {
+            val a = JSONArray(); hr.takeLast(500).forEach { (t, bpm) -> a.put(JSONObject().put("t", t).put("bpm", bpm)) }
+            val body = JSONObject().put("hr", a)
+            if (stepsToday != null) body.put("stepsToday", stepsToday)
+            req("POST", "/api/device/health", body.toString())
+        }.onFailure { lastError = it.message }.isSuccess
     }
 
     /** 事件先存本機，再上傳；上傳失敗會留在 pending，下次心跳時補傳。 */

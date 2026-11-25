@@ -2,7 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../util.dart';
+import 'guardians_page.dart';
 import 'incident_page.dart';
+import 'smart_devices_page.dart';
 
 /// 單一機器人：長者資料（可編輯，機器人一分鐘內同步）＋事件列表。
 class DevicePage extends StatelessWidget {
@@ -32,7 +34,27 @@ class DevicePage extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall),
               ])),
             ),
-            const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text('事件紀錄', style: TextStyle(fontWeight: FontWeight.bold))),
+            Card(
+              margin: const EdgeInsets.symmetric(horizontal: 12),
+              child: Column(children: [
+                ListTile(
+                  leading: const Icon(Icons.notifications_active_outlined, color: brandTeal),
+                  title: const Text('通知與監護人'),
+                  subtitle: Text(guardianOrder(d).map((u) => (d['memberNames'] ?? {})[u] ?? '家人').join(' → ') + ' ＋ 守護中心'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => GuardiansPage(deviceId: deviceId))),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.watch_outlined, color: brandTeal),
+                  title: const Text('智慧裝置'),
+                  subtitle: const Text('手錶心率與步數、機器人底盤'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SmartDevicesPage(deviceId: deviceId))),
+                ),
+              ]),
+            ),
+            const Padding(padding: EdgeInsets.fromLTRB(16, 16, 16, 4), child: Text('事件紀錄', style: TextStyle(fontWeight: FontWeight.bold))),
             StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: ref.collection('incidents').orderBy('start', descending: true).limit(50).snapshots(),
               builder: (context, s) {

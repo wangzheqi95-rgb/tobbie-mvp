@@ -6,6 +6,7 @@ import 'firebase_options.dart'; // 由 `flutterfire configure` 產生（不進�
 import 'notifications.dart';
 import 'pages/home_page.dart';
 import 'pages/login_page.dart';
+import 'util.dart';
 
 /// Neara 家屬 App：收警報、看事件報告、管理長者資料、綁定機器人與 LINE。
 Future<void> main() async {
@@ -20,11 +21,12 @@ class NearaFamilyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = ColorScheme.fromSeed(seedColor: const Color(0xFF1A73E8));
+    final scheme = ColorScheme.fromSeed(seedColor: brandTeal, primary: brandTeal, error: alertRed);
     return MaterialApp(
       title: 'Neara 家屬',
-      theme: ThemeData(colorScheme: scheme, useMaterial3: true),
-      darkTheme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A73E8), brightness: Brightness.dark), useMaterial3: true),
+      theme: ThemeData(colorScheme: scheme, useMaterial3: true, scaffoldBackgroundColor: brandCream,
+          appBarTheme: const AppBarTheme(backgroundColor: brandCream)),
+      darkTheme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: brandTeal, brightness: Brightness.dark), useMaterial3: true),
       navigatorKey: Notifications.navigatorKey,
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),

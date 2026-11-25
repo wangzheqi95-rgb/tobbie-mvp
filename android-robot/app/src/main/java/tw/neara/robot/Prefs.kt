@@ -29,6 +29,10 @@ class Prefs(ctx: Context) {
     var speechRate: Float by float("speechRate", 0.9f)
     var speechPitch: Float by float("speechPitch", 1.1f)
     var kioskLock: Boolean by bool("kioskLock", false)
+    var healthConnect: Boolean by bool("healthConnect", false)  // 串接手錶（Health Connect）
+    var healthLastSync: Long by long("healthLastSync", 0L)
+    var autoCall: Boolean by bool("autoCall", true)             // 警報時用這支手機的 SIM 卡撥給家人
+    var callListJson: String by str("callList", "[]")           // 後端心跳帶來的撥號清單（依監護人順序）
 
     // ---- 小工具：用屬性代理讀寫 SharedPreferences
     private fun str(k: String, d: String) = object : kotlin.properties.ReadWriteProperty<Any, String> {
@@ -42,6 +46,10 @@ class Prefs(ctx: Context) {
     private fun int(k: String, d: Int) = object : kotlin.properties.ReadWriteProperty<Any, Int> {
         override fun getValue(thisRef: Any, property: kotlin.reflect.KProperty<*>) = sp.getInt(k, d)
         override fun setValue(thisRef: Any, property: kotlin.reflect.KProperty<*>, value: Int) { sp.edit().putInt(k, value).apply() }
+    }
+    private fun long(k: String, d: Long) = object : kotlin.properties.ReadWriteProperty<Any, Long> {
+        override fun getValue(thisRef: Any, property: kotlin.reflect.KProperty<*>) = sp.getLong(k, d)
+        override fun setValue(thisRef: Any, property: kotlin.reflect.KProperty<*>, value: Long) { sp.edit().putLong(k, value).apply() }
     }
     private fun float(k: String, d: Float) = object : kotlin.properties.ReadWriteProperty<Any, Float> {
         override fun getValue(thisRef: Any, property: kotlin.reflect.KProperty<*>) = sp.getFloat(k, d)

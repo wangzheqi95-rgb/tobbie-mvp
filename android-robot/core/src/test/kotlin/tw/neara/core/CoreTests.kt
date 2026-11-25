@@ -114,6 +114,18 @@ fun main(args: Array<String>) {
         check("hello 封包格式", MiioCodec.HELLO.size == 32 && MiioCodec.HELLO[0] == 0x21.toByte() && MiioCodec.HELLO[3] == 0x20.toByte())
     }
 
+    run {
+        val p = CallPlan(3, gapMs = 180_000)
+        check("撥號：一開始撥第 1 位", p.due(0, false) == 0)
+        check("撥號：3 分鐘內不撥下一位", p.due(60_000, false) == null)
+        check("撥號：3 分鐘到撥第 2 位", p.due(180_000, false) == 1)
+        check("撥號：有人接手就停", p.due(400_000, true) == null)
+        check("撥號：沒接手繼續第 3 位", p.due(400_000, false) == 2)
+        check("撥號：清單撥完就停", p.due(999_999, false) == null)
+        check("撥號：空清單不撥", CallPlan(0).due(0, false) == null)
+        check("接手台詞", ackLine("阿嬤", "大明").contains("大明已經收到通知"))
+    }
+
     println(if (failures == 0) "ALL PASS" else "$failures FAILED")
     if (failures > 0) kotlin.system.exitProcess(1)
 }

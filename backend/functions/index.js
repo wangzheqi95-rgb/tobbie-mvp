@@ -109,6 +109,10 @@ exports.bindDevice = callable(H.bindDevice);
 exports.resolveIncident = callable(H.resolveIncident);
 exports.updateDeviceConfig = callable(H.updateDeviceConfig);
 exports.createLineLinkCode = callable((d, uid) => H.createLineLinkCode(d, uid));
+exports.createInviteCode = callable(H.createInviteCode);   // 邀請其他家人
+exports.updateGuardians = callable(H.updateGuardians);     // 通知順序、稱謂、移除
+exports.updateMyProfile = callable(H.updateMyProfile);     // 電話、名稱、通知偏好
+exports.ackIncident = callable(H.ackIncident);             // 「我來處理」
 
 // ---- LINE webhook（在 LINE Developers 後台把 Webhook URL 設為這個函式的網址）
 exports.lineWebhook = onRequest({ secrets: [LINE_TOKEN, LINE_SECRET] }, async (req, res) => {
@@ -130,6 +134,26 @@ exports.onIncidentWritten = onDocumentWritten({ document: "devices/{deviceId}/in
   const after = event.data.after.exists ? event.data.after.data() : null;
   const r = await H.onIncidentWritten(deps(), event.params.deviceId, before, after);
   if (r) logger.info("notified", event.params.incidentId, r.msg.level, r.results);
+});
+
+// ---- 每分鐘：還沒人接手的警報，3 分鐘到了就通知下一位家人
+exports.escalate = onSchedule({ schedule: "every 1 minutes", timeZone: "Asia/Taipei", secrets: [LINE_TOKEN] }, async () => {
+  const due = (await admin.firestore().collectionGroup("incidents").where("escNextAt", "<=", Date.now()).limit(200).get()).docs;
+  const n = await H.escalateDue(deps(), due);
+  if (n) logger.info("escalated", n);
+});
+
+// ---- 每 5 分鐘：機器人離線超過 30 分鐘就通知家人（只通知一次）
+exports.offlineCheck = onSchedule({ schedule: "every 5 minutes", timeZone: "Asia/Taipei", secrets: [LINE_TOKEN] }, async () => {
+  const stale = (await admin.firestore().collection("devices").where("lastSeen", "<", Date.now() - C.OFFLINE_MS).limit(500).get()).docs;
+  const n = await H.notifyOffline(deps(), stale);
+  if (n) logger.info("offline notified", n);
+});
+
+// ---- 每晚 9 點：平安摘要（家人自己在 App 開啟）
+exports.dailySummary = onSchedule({ schedule: "0 21 * * *", timeZone: "Asia/Taipei", secrets: [LINE_TOKEN] }, async () => {
+  const devices = (await admin.firestore().collection("devices").limit(2000).get()).docs;
+  logger.info("daily summaries", await H.dailySummary(deps(), devices));
 });
 
 // ---- 每天凌晨 3 點清除超過保存期限的事件

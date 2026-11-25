@@ -8,6 +8,12 @@ const PAIRING_TTL_MS = 10 * 60 * 1000;      // 配對碼 10 分鐘有效
 const RETENTION_DAYS = 90;                  // 事件照片與骨架預設保存 90 天
 const OUTCOMES = ["PENDING", "CANCELLED", "ALERTED"];
 const REASONS = ["LYING", "VANISH", "CHAT", "RADAR", "TEST"];
+const ESCALATE_MS = 3 * 60 * 1000;          // 家人 3 分鐘沒按「我來處理」就通知下一位
+const OFFLINE_MS = 30 * 60 * 1000;          // 機器人超過 30 分鐘沒心跳＝離線
+const HR_KEEP_MS = 2 * 3600 * 1000;         // 心率樣本只保留最近 2 小時（給事件報告用）
+const RELATIONS = ["兒子", "女兒", "配偶", "孫子女", "照顧者", "其他"];
+/** 每位家屬的通知偏好預設值（緊急警報不能關）。 */
+const DEFAULT_PREFS = { checking: true, cancelled: true, offline: true, daily: false, autoCall: true };
 
 const sha256 = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 const newDeviceKey = () => crypto.randomBytes(24).toString("base64url");
@@ -103,7 +109,67 @@ function canSeeDevice(user, device) {
   return Array.isArray(device.members) && device.members.includes(user.uid);
 }
 
+// ------------------------------------------------------------------ 監護人與升級
+const prefsOf = (user) => ({ ...DEFAULT_PREFS, ...((user && user.notifyPrefs) || {}) });
+
+/** 監護人通知順序：guardianOrder 裡有的照順序，其他成員接在後面（舊資料相容）。 */
+function guardianOrder(device) {
+  const members = (device && device.members) || [];
+  const order = ((device && device.guardianOrder) || []).filter((u) => members.includes(u));
+  return [...new Set([...order, ...members])];
+}
+
+/** 守護中心要不要同步收到：試用期間（plan 未設定或 trial）與守護方案都要；只有 basic 方案不通知。 */
+const centerEnabled = (device) => ((device && device.plan) || "trial") !== "basic";
+
+/**
+ * 升級規則（簡單版）：
+ *   警報開始（level 0）→ 守護中心＋第 1 位家人同時通知；
+ *   每過 3 分鐘沒人按「我來處理」→ 通知下一位家人（level 1、2…）；
+ *   家人都通知過了就不再排下一次。
+ * 回傳這一步要通知誰、下一次什麼時候再檢查。
+ */
+function escalationStep(order, level, now) {
+  const who = order[level] || null;
+  const nextAt = level + 1 < order.length ? now + ESCALATE_MS : null;
+  return { who, nextAt };
+}
+
+/** 從心率樣本找事件前後的數字：事件前 10 分鐘內最後一筆、事件後 5 分鐘內最高的一筆。 */
+function vitalsAround(samples, start) {
+  const hr = (samples || []).filter((s) => Number.isFinite(s.t) && Number.isFinite(s.bpm));
+  const before = hr.filter((s) => s.t <= start && s.t >= start - 10 * 60 * 1000).sort((a, b) => a.t - b.t).pop();
+  const after = hr.filter((s) => s.t > start && s.t <= start + 5 * 60 * 1000).sort((a, b) => b.bpm - a.bpm)[0];
+  if (!before && !after) return null;
+  return { hrBefore: before ? before.bpm : null, hrAfter: after ? after.bpm : null, source: "手錶（Health Connect）" };
+}
+
+/** 合併新上傳的心率樣本：去重、排序、只留最近 2 小時、最多 720 筆。 */
+function mergeHeartRate(old, incoming, now) {
+  const map = new Map();
+  for (const s of [...(old || []), ...(incoming || [])]) {
+    const t = Number(s.t), bpm = Number(s.bpm);
+    if (!Number.isFinite(t) || !Number.isFinite(bpm) || bpm < 20 || bpm > 250) continue;
+    map.set(t, { t, bpm: Math.round(bpm) });
+  }
+  return [...map.values()].filter((s) => s.t >= now - HR_KEEP_MS && s.t <= now + 60000).sort((a, b) => a.t - b.t).slice(-720);
+}
+
+/** 台灣時間的「今天 0 點」（毫秒）。 */
+function taipeiDayStart(now) {
+  const off = 8 * 3600 * 1000;
+  return Math.floor((now + off) / 86400000) * 86400000 - off;
+}
+
+/** 電話號碼：台灣手機或市話，存成只有數字與 + 的格式。 */
+function normalizePhone(p) {
+  const s = String(p || "").replace(/[\s-]/g, "");
+  return /^\+?\d{8,15}$/.test(s) ? s : null;
+}
+
 module.exports = {
+  ESCALATE_MS, OFFLINE_MS, RELATIONS, DEFAULT_PREFS, prefsOf, guardianOrder, centerEnabled, escalationStep,
+  vitalsAround, mergeHeartRate, taipeiDayStart, normalizePhone,
   PAIRING_TTL_MS, RETENTION_DAYS, sha256, newDeviceKey, newPairingCode, newLinkCode,
   parseDeviceAuth, safeEqual, validateIncident, notificationFor, retentionCutoff,
   verifyLineSignature, systemPrompt, canSeeDevice,

@@ -49,6 +49,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$camerax")
     implementation("androidx.camera:camera-view:$camerax")
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
+    implementation("androidx.health.connect:connect-client:1.1.0-alpha07") // 智慧手錶（Health Connect）
 }
 
 // 第一次建置時自動下載姿勢辨識模型（約 5.5 MB）到 assets

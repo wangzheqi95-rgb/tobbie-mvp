@@ -40,7 +40,23 @@ class IncidentPage extends StatelessWidget {
                 onPressed: () => launchUrl(Uri.parse('tel:119')),
                 icon: const Icon(Icons.call), label: const Text('撥打 119', style: TextStyle(fontSize: 18))),
               const SizedBox(height: 8),
+              if (x['ackAt'] == null)
+                FilledButton(
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                  onPressed: () => _ack(context),
+                  child: const Text('我來處理（通知其他監護人）', style: TextStyle(fontSize: 17)))
+              else
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: brandTealLight, borderRadius: BorderRadius.circular(12)),
+                  child: Text('${x['ackByName'] ?? '家人'} 已接手處理（${ago(x['ackAt'] as num?)}）', style: const TextStyle(color: brandTeal, fontWeight: FontWeight.w600))),
+              const SizedBox(height: 8),
               OutlinedButton(onPressed: () => _resolve(context), child: const Text('我已處理，結案（機器人會停止警報）')),
+              const SizedBox(height: 4),
+              FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                future: dref.get(),
+                builder: (c, d) => Text(_escalationText(x, d.data?.data() ?? {}), style: const TextStyle(fontSize: 13, color: Colors.black54)),
+              ),
             ],
             _section(context, '事件摘要'),
             _row('事件時間', '${fmtTime(x['start'])}（${ago(x['start'] as num?)}）'),
@@ -48,6 +64,11 @@ class IncidentPage extends StatelessWidget {
             _row('最後正常活動', lastWell == null ? '—' : '${fmtTime(lastWell)}（事件前約 ${gap! < 60 ? '$gap 秒' : '${gap ~/ 60} 分鐘'}）'),
             _row('處理結果', '${x['outcomeLabel'] ?? x['outcome']}'),
             _row('結案', x['resolved'] == null ? '尚未結案' : '${fmtTime(x['resolved'])}｜${x['resolvedBy'] ?? ''}${x['resolveNote'] != null ? '\n${x['resolveNote']}' : ''}'),
+            if (x['vitals'] != null) ...[
+              _section(context, '生理數據（${x['vitals']['source'] ?? '手錶'}）'),
+              _row('事件前心率', x['vitals']['hrBefore'] == null ? '—' : '${x['vitals']['hrBefore']} bpm'),
+              _row('事件後心率', x['vitals']['hrAfter'] == null ? '（尚未收到）' : '${x['vitals']['hrAfter']} bpm（事件後 5 分鐘內最高）'),
+            ],
             if (x['snapshotPath'] != null) ...[
               _section(context, '事件當下照片'),
               FutureBuilder<String>(
@@ -83,6 +104,30 @@ class IncidentPage extends StatelessWidget {
         SizedBox(width: 120, child: Text(k, style: const TextStyle(color: Colors.grey))),
         Expanded(child: Text(v)),
       ]));
+
+  /// 「已通知 大明；3 分鐘後通知 小美」
+  String _escalationText(Map<String, dynamic> x, Map<String, dynamic> d) {
+    final names = Map<String, dynamic>.from(d['memberNames'] ?? {});
+    final order = guardianOrder(d);
+    final notified = List<String>.from(x['escNotified'] ?? const []).map((u) => names[u] ?? '家人').join('、');
+    final level = (x['escLevel'] as num?)?.toInt() ?? 0;
+    final next = x['ackAt'] == null && x['escNextAt'] != null && level + 1 < order.length ? names[order[level + 1]] ?? '下一位家人' : null;
+    final parts = <String>[
+      if (x['centerNotifiedAt'] != null) '守護中心已同步收到',
+      if (notified.isNotEmpty) '已通知 $notified',
+      if (next != null) '${until(x['escNextAt'] as num)}通知 $next',
+    ];
+    return parts.join('；');
+  }
+
+  Future<void> _ack(BuildContext context) async {
+    try {
+      await functions.httpsCallable('ackIncident').call({'deviceId': deviceId, 'incidentId': incidentId});
+      if (context.mounted) toast(context, '已通知其他監護人由你處理，機器人也會告訴長輩');
+    } catch (e) {
+      if (context.mounted) toast(context, '失敗：${errText(e)}');
+    }
+  }
 
   Future<void> _resolve(BuildContext context) async {
     final note = TextEditingController();

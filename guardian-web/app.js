@@ -33,6 +33,7 @@ async function firebaseSource() {
     url: (path) => (path ? S.getDownloadURL(S.ref(st, path)) : null),
     detail: async (path) => (path ? (await fetch(await S.getDownloadURL(S.ref(st, path)))).json() : null),
     resolve: (deviceId, incidentId, note) => Fn.httpsCallable(fns, "resolveIncident")({ deviceId, incidentId, note }),
+    ack: (deviceId, incidentId) => Fn.httpsCallable(fns, "ackIncident")({ deviceId, incidentId }),
   };
 }
 
@@ -42,11 +43,14 @@ function demoSource() {
   const stand = Array.from({ length: 33 }, (_, k) => [0.45 + (k % 2) * 0.05, 0.15 + k * 0.022]);
   const frames = [...Array(60)].map((_, i) => ({ t: now - 120000 - (60 - i) * 100, deg: i < 40 ? 8 : 85, p: i < 40 ? stand : lie(i) }));
   const devices = {
-    "dev-a": { elderName: "王阿嬤", profile: "82 歲，獨居。\n慣用藥物：降血壓藥（早上一顆）\n過敏：無\n緊急聯絡人：兒子 王大明 0912-000-000", lastSeen: now - 30000, state: "ALERT", chassis: "石頭 S6", members: ["u1"] },
-    "dev-b": { elderName: "陳阿公", profile: "79 歲，與太太同住。\n緊急聯絡人：女兒 0922-000-000", lastSeen: now - 50000, state: "MONITOR", chassis: "Tobbie II", members: ["u2"] },
+    "dev-a": { elderName: "王阿嬤", profile: "82 歲，獨居。\n慣用藥物：降血壓藥（早上一顆）\n過敏：無\n緊急聯絡人：兒子 王大明 0912-000-000", lastSeen: now - 30000, state: "ALERT", chassis: "石頭 S6",
+      members: ["u1", "u3"], guardianOrder: ["u1", "u3"], relations: { u1: "兒子", u3: "女兒" }, memberNames: { u1: "大明", u3: "小美" }, integrations: { healthConnect: { status: "OK", lastSync: now - 60000 } } },
+    "dev-b": { elderName: "陳阿公", profile: "79 歲，與太太同住。\n緊急聯絡人：女兒 0922-000-000", lastSeen: now - 50000, state: "MONITOR", chassis: "Tobbie II",
+      members: ["u2"], guardianOrder: ["u2"], relations: { u2: "女兒" }, memberNames: { u2: "淑芬" } },
   };
   let incidents = [
     { id: "NEARA-dev-a-1", _deviceId: "dev-a", elderName: "王阿嬤", reason: "LYING", reasonLabel: "偵測到疑似跌倒", start: now - 120000, lastWell: now - 124000, outcome: "ALERTED", outcomeLabel: "無回應或求救，已發出警報", resolved: null, chassis: "石頭 S6",
+      escLevel: 0, escNotified: ["u1"], escNextAt: now + 70000, centerNotifiedAt: now - 97000, vitals: { hrBefore: 74, hrAfter: 112, source: "手錶（Health Connect）" },
       dialog: [{ t: now - 115000, who: "機器人", text: "阿嬤，您還好嗎？是不是跌倒了？" }, { t: now - 107000, who: "阿嬤", text: "（沒有回應）　→ 判讀：無法判斷" }, { t: now - 106000, who: "機器人", text: "阿嬤，聽得到我嗎？沒事的話，跟我說「沒事」就好喔。" }, { t: now - 98000, who: "阿嬤", text: "好痛…起不來　→ 判讀：求救" }] },
     { id: "NEARA-dev-b-1", _deviceId: "dev-b", elderName: "陳阿公", reason: "VANISH", reasonLabel: "長者往下掉後消失在畫面中", start: now - 3600_000, lastWell: now - 3604_000, outcome: "CANCELLED", outcomeLabel: "長者表示沒事，已取消", resolved: null, chassis: "Tobbie II",
       dialog: [{ t: now - 3598_000, who: "機器人", text: "阿公，我突然看不到您了，您還好嗎？" }, { t: now - 3592_000, who: "阿公", text: "我沒事啦　→ 判讀：沒事" }] },
@@ -64,7 +68,27 @@ function demoSource() {
       incidents = incidents.map((x) => (x.id === incidentId ? { ...x, resolved: Date.now(), resolvedBy: "守護中心 展示值班員", resolveNote: note } : x));
       watcher && watcher(incidents);
     },
+    ack: async (deviceId, incidentId) => {
+      incidents = incidents.map((x) => (x.id === incidentId ? { ...x, ackAt: Date.now(), ackByName: "守護中心 展示值班員", escNextAt: null } : x));
+      watcher && watcher(incidents);
+    },
   };
+}
+
+// ------------------------------------------------------------------ 監護人升級狀態
+const devCache = {};
+const until = (t) => { const s = Math.round((t - Date.now()) / 1000); return s <= 0 ? "即將" : s < 60 ? `${s} 秒後` : `${Math.ceil(s / 60)} 分鐘後`; };
+const orderOf = (d) => { const m = (d && d.members) || []; return [...new Set([...((d && d.guardianOrder) || []).filter((u) => m.includes(u)), ...m])]; };
+/** 「大明 已接手」／「已通知 大明；1 分鐘後通知 小美」／「家屬都沒有接手」 */
+function escText(x, d) {
+  if (!isOpenAlert(x)) return "";
+  if (x.ackAt) return `${x.ackByName || "家人"} 已接手`;
+  const names = (d && d.memberNames) || {}, rel = (d && d.relations) || {};
+  const nm = (u) => `${names[u] || "家人"}${rel[u] ? `（${rel[u]}）` : ""}`;
+  const order = orderOf(d), notified = (x.escNotified || []).map(nm).join("、");
+  const next = x.escNextAt && order[(x.escLevel || 0) + 1];
+  if (next) return `已通知 ${notified || "—"}；${until(x.escNextAt)}通知 ${nm(next)}`;
+  return notified ? `已通知 ${notified}，家屬都還沒有接手` : "沒有綁定家屬";
 }
 
 // ------------------------------------------------------------------ 畫面
@@ -80,12 +104,18 @@ function renderList() {
   b.textContent = open ? `⚠ 有 ${open} 筆警報尚未處理` : "";
   setBeep(open > 0);
   if (!items.length) { $("list").innerHTML = '<div class="empty">目前沒有事件</div>'; return; }
+  // 警報中的事件需要裝置資料（家屬名單）才能顯示升級狀態
+  for (const x of items.filter(isOpenAlert)) if (!(x._deviceId in devCache)) {
+    devCache[x._deviceId] = null;
+    src.getDevice(x._deviceId).then((d) => { devCache[x._deviceId] = d; renderList(); }).catch(() => {});
+  }
   const sorted = [...items].sort((a, b) => (isOpenAlert(b) - isOpenAlert(a)) || (b.start - a.start));
   $("list").innerHTML = sorted.map((x) => {
     const [cls, label] = tagOf(x);
     return `<div class="item ${selected && selected.id === x.id ? "sel" : ""}" data-id="${esc(x.id)}">
       <div class="top"><span>${esc(x.elderName || x._deviceId)}</span><span class="tag ${cls}">${label}</span></div>
-      <div class="sub">${esc(x.reasonLabel || x.reason)}｜${fmt(x.start)}（${ago(x.start)}）</div></div>`;
+      <div class="sub">${esc(x.reasonLabel || x.reason)}｜${fmt(x.start)}（${ago(x.start)}）</div>
+      ${isOpenAlert(x) ? `<div class="sub" style="color:${x.ackAt ? "#1F6F66" : "#B3261E"}">${esc(escText(x, devCache[x._deviceId]))}</div>` : ""}</div>`;
   }).join("");
   document.querySelectorAll(".item").forEach((el) => (el.onclick = () => select(items.find((x) => x.id === el.dataset.id))));
 }
@@ -99,6 +129,9 @@ async function select(x) {
     src.url(x.snapshotPath).catch(() => null), src.detail(x.detailPath).catch(() => null),
   ]);
   if (selected !== x) return;
+  devCache[x._deviceId] = dev;
+  const hc = dev && dev.integrations && dev.integrations.healthConnect;
+  const order = orderOf(dev).map((u) => `${(dev.memberNames || {})[u] || "家人"}（${(dev.relations || {})[u] || "其他"}）`);
   const online = dev && dev.lastSeen && Date.now() - dev.lastSeen < 3 * 60_000;
   $("devStatus").innerHTML = dev ? `機器人 ${online ? "🟢 在線" : "🔴 離線"}（最後回報 ${ago(dev.lastSeen)}）` : "";
   const [cls, label] = tagOf(x);
@@ -113,6 +146,9 @@ async function select(x) {
       <tr><td>處理結果</td><td>${esc(x.outcomeLabel || x.outcome)}</td></tr>
       <tr><td>結案</td><td>${x.resolved ? `${fmt(x.resolved)}｜${esc(x.resolvedBy || "")}${x.resolveNote ? `<br>${esc(x.resolveNote)}` : ""}` : "尚未結案"}</td></tr>
       <tr><td>底盤</td><td>${esc(x.chassis || "")}</td></tr>
+      <tr><td>監護人順序</td><td>${order.length ? esc(order.join(" → ")) : "（沒有綁定家屬）"}｜守護中心${x.centerNotifiedAt ? ` 已於 ${fmt(x.centerNotifiedAt)} 同步收到` : ""}</td></tr>
+      ${isOpenAlert(x) ? `<tr><td>接手狀態</td><td><b>${esc(escText(x, dev))}</b></td></tr>` : ""}
+      <tr><td>手錶心率</td><td>${x.vitals ? `事件前 ${x.vitals.hrBefore ?? "—"} bpm → 事件後 ${x.vitals.hrAfter ?? "（尚未收到）"} bpm` : hc && hc.status === "OK" ? "（事件前後沒有心率資料）" : "未串接手錶"}</td></tr>
     </table>
     <h3>長者資料與緊急聯絡人</h3>
     <div style="white-space:pre-wrap">${esc((dev && dev.profile) || "（家屬尚未填寫）")}</div>
@@ -124,10 +160,16 @@ async function select(x) {
       <div class="row"><button id="play">播放</button><input id="sl" type="range" min="0" value="0" style="flex:1"><span id="lab" class="muted"></span></div>` : '<div class="muted">（沒有骨架資料）</div>'}
     <h3>通知紀錄</h3>
     <table>${notes.map((n) => `<tr><td>${fmt(n.at)}</td><td>${n.level === "critical" ? "🔴 " : ""}${esc(n.title)}${n.pushTokens != null ? `<span class="muted">（推播 ${n.pushTokens}、LINE ${n.lineUsers}）</span>` : ""}</td></tr>`).join("") || "<tr><td colspan=2>（無）</td></tr>"}</table>
+    ${isOpenAlert(x) && !x.ackAt ? `<div class="row" style="margin-top:12px"><button class="primary" id="btnAck">由守護中心接手（家屬會收到通知、停止往下通知）</button></div>` : ""}
     ${x.resolved ? "" : `<h3>結案</h3>
       <textarea id="note" placeholder="處理經過，例如：已電話聯絡兒子，10 分鐘內到場；或已通報 119"></textarea>
       <div class="row" style="margin-top:8px"><button class="danger" id="btnResolve">確認結案（機器人會停止警報）</button></div>`}`;
   if (det && (det.pre || det.post)) replay(det, x.start);
+  const ack = $("btnAck");
+  if (ack) ack.onclick = async () => {
+    ack.disabled = true;
+    try { await src.ack(x._deviceId, x.id); } catch (e) { alert("接手失敗：" + e.message); ack.disabled = false; }
+  };
   const btn = $("btnResolve");
   if (btn) btn.onclick = async () => {
     const note = $("note").value.trim();
@@ -170,6 +212,7 @@ async function main() {
   }
   src = demo ? demoSource() : await firebaseSource();
   setInterval(() => ($("clock").textContent = new Date().toLocaleTimeString("zh-TW", { hour12: false })), 1000);
+  setInterval(() => items.some(isOpenAlert) && renderList(), 15000); // 更新「幾分鐘後通知下一位」
   $("btnSound").onclick = () => { audioCtx = audioCtx || new AudioContext(); soundOn = !soundOn; $("btnSound").textContent = soundOn ? "關閉警報音" : "開啟警報音"; renderList(); };
   $("btnLogout").onclick = () => src.logout();
   $("btnLogin").onclick = async () => { try { await src.login($("email").value, $("pw").value); } catch (e) { $("loginMsg").textContent = "登入失敗：" + e.message; } };
@@ -182,7 +225,7 @@ async function main() {
     $("who").textContent = `${u.displayName || u.email}（${u.role === "admin" ? "管理員" : "守護中心"}）`;
     unsub = src.watchIncidents((list) => {
       items = list;
-      if (selected) { const s = items.find((x) => x.id === selected.id); if (s && s.resolved !== selected.resolved) select(s); else selected = s || selected; }
+      if (selected) { const s = items.find((x) => x.id === selected.id); if (s && (s.resolved !== selected.resolved || s.ackAt !== selected.ackAt)) select(s); else selected = s || selected; }
       renderList();
     }) || null;
   });

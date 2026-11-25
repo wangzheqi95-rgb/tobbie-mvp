@@ -18,7 +18,7 @@ class HomePage extends StatelessWidget {
         IconButton(icon: const Icon(Icons.settings), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()))),
       ]),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _bind(context), icon: const Icon(Icons.add), label: const Text('新增機器人')),
+        onPressed: () => _bind(context), icon: const Icon(Icons.add), label: const Text('新增長輩')),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance.collection('devices').where('members', arrayContains: uid).snapshots(),
         builder: (context, snap) {
@@ -35,21 +35,30 @@ class HomePage extends StatelessWidget {
     );
   }
 
+  static const relations = ['兒子', '女兒', '配偶', '孫子女', '照顧者', '其他'];
+
   Future<void> _bind(BuildContext context) async {
     final ctl = TextEditingController();
-    final code = await showDialog<String>(context: context, builder: (c) => AlertDialog(
-      title: const Text('新增機器人'),
-      content: TextField(controller: ctl, keyboardType: TextInputType.number, maxLength: 6,
-          decoration: const InputDecoration(labelText: '機器人畫面上的 6 位數配對碼')),
+    var relation = relations.first;
+    final code = await showDialog<String>(context: context, builder: (c) => StatefulBuilder(builder: (c, setS) => AlertDialog(
+      title: const Text('新增長輩'),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: ctl, keyboardType: TextInputType.number, maxLength: 6,
+            decoration: const InputDecoration(labelText: '6 位數配對碼', helperText: '機器人螢幕上的配對碼，或家人給你的邀請碼')),
+        DropdownButtonFormField<String>(value: relation, decoration: const InputDecoration(labelText: '您是長輩的'),
+            items: [for (final r in relations) DropdownMenuItem(value: r, child: Text(r))],
+            onChanged: (v) => setS(() => relation = v ?? relation)),
+      ]),
       actions: [
         TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c, ctl.text.trim()), child: const Text('綁定')),
+        FilledButton(onPressed: () => Navigator.pop(c, ctl.text.trim()), child: const Text('配對')),
       ],
-    ));
+    )));
     if (code == null || code.isEmpty || !context.mounted) return;
     try {
-      await functions.httpsCallable('bindDevice').call({'code': code});
-      if (context.mounted) toast(context, '綁定成功！');
+      final r = await functions.httpsCallable('bindDevice').call({'code': code, 'relation': relation});
+      final primary = (r.data as Map)['primary'] == true;
+      if (context.mounted) toast(context, primary ? '配對成功！您是主要監護人，可以到「通知與監護人」邀請其他家人。' : '配對成功！');
     } catch (e) {
       if (context.mounted) toast(context, '綁定失敗：${errText(e)}');
     }

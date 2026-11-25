@@ -5,7 +5,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
+import android.net.Uri
 import android.os.Bundle
+import android.telecom.TelecomManager
 import android.util.Log
 import android.view.View
 import android.view.WindowManager
@@ -67,7 +69,7 @@ class MainActivity : AppCompatActivity(), CareUi {
         prefs = Prefs(this)
         voice = Voice(this, prefs)
         cloud = Cloud(prefs, filesDir)
-        care = CareController(lifecycleScope, prefs, voice, cloud, this) { analyzer?.lastBitmap }
+        care = CareController(lifecycleScope, prefs, voice, cloud, this, HealthSync(this, prefs)) { analyzer?.lastBitmap }
 
         findViewById<Button>(R.id.btnTest).setOnClickListener { if (started) care.testFall() }
         findViewById<Button>(R.id.btnChat).setOnClickListener { if (started) care.startChat("手動觸發") }
@@ -75,6 +77,7 @@ class MainActivity : AppCompatActivity(), CareUi {
         findViewById<Button>(R.id.btnClear).setOnClickListener { care.clearAlarm() }
 
         val perms = mutableListOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+        if (prefs.autoCall) perms += Manifest.permission.CALL_PHONE // 警報時用 SIM 卡撥給家人（拒絕也能照常運作）
         if (prefs.chassis == "tobbie") {
             if (Build.VERSION.SDK_INT >= 31) perms += listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
             else perms += Manifest.permission.ACCESS_FINE_LOCATION
@@ -158,6 +161,17 @@ class MainActivity : AppCompatActivity(), CareUi {
         findViewById<TextView>(R.id.alarmText).text = "${SimpleDateFormat("HH:mm:ss", Locale.TAIWAN).format(Date())}\n$text"
     }
     override fun log(text: String) { Log.i(CareController.TAG, text); runOnUiThread { infoView.text = text } }
+
+    override fun placeCall(name: String, phone: String): Boolean {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) return false
+        return runCatching {
+            // 螢幕固定模式下系統可能擋住通話畫面，撥號前先解除固定（警報結束回到 App 會再固定）
+            if (prefs.kioskLock) runCatching { stopLockTask() }
+            val tm = getSystemService(TelecomManager::class.java)
+            val extras = Bundle().apply { putBoolean(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, true) } // 開擴音，長輩不用拿手機
+            tm.placeCall(Uri.fromParts("tel", phone, null), extras)
+        }.isSuccess
+    }
 
     override fun onDestroy() {
         care.stop(); voice.shutdown(); analyzer?.close(); cameraExec.shutdown()

@@ -59,3 +59,24 @@ object Lines {
 不要使用表情符號、條列、英文或括號說明。
 不要做醫療診斷；如果長輩說身體不舒服，溫柔關心，並建議告訴家人或去看醫生。"""
 }
+
+/**
+ * 警報時機器人用自己的 SIM 卡撥號給家人（規則跟後端推播升級一樣）：
+ * 一進入警報就撥第 1 位；之後每 3 分鐘還沒有人在 App 按「我來處理」，就撥下一位；
+ * 有人接手、或清單撥完，就不再撥。
+ */
+class CallPlan(private val size: Int, private val gapMs: Long = 180_000) {
+    private var next = 0
+    private var lastAt = 0L
+
+    /** 現在要撥清單上的第幾位（null＝現在不用撥）。 */
+    fun due(now: Long, acked: Boolean): Int? {
+        if (acked || next >= size) return null
+        if (next > 0 && now - lastAt < gapMs) return null
+        lastAt = now
+        return next++
+    }
+}
+
+/** 家人接手後，機器人對長輩說的話。 */
+fun ackLine(name: String, by: String) = "${name}，${by}已經收到通知，正在處理了，我會陪著您。"

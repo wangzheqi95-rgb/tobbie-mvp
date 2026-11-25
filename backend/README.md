@@ -2,10 +2,10 @@
 
 | 項目 | 內容 |
 |---|---|
-| `functions/index.js` | 接上 Firebase：機器人 API、callable、LINE webhook、事件觸發通知、每日清除 |
+| `functions/index.js` | 接上 Firebase：機器人 API、callable、LINE webhook、事件觸發通知、排程（每分鐘升級通知、每 5 分鐘離線檢查、每晚 9 點平安摘要、每天清除過期資料） |
 | `functions/lib/handlers.js` | 業務邏輯（可在沒有網路的環境測試） |
 | `functions/lib/core.js` | 純邏輯：驗證、事件檢查、通知規則、LINE 簽章 |
-| `functions/test/` | 單元與流程測試：`npm test` |
+| `functions/test/` | 單元與流程測試：`npm test`（含監護人升級、我來處理、手錶心率、離線與每日摘要） |
 | `firestore.rules`、`storage.rules` | 權限：所有寫入經伺服器；家屬只看得到自己綁定的機器人；角色由管理員設定 |
 | `scripts/set-role.js` | 把帳號設成守護中心人員或管理員 |
 
