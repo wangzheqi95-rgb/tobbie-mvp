@@ -7,6 +7,7 @@ import 'device_page.dart';
 import 'elder_page.dart';
 import 'incident_page.dart';
 import 'onboarding_page.dart';
+import 'video_call_page.dart';
 
 /// 首頁「我的長輩」（照設計稿）：每位長輩一張卡（平安／警報／離線、步數、心率、上次聊天）＋最近事件。
 class HomePage extends StatelessWidget {
@@ -122,8 +123,10 @@ class ElderCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(child: OutlinedButton(
                   style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DevicePage(deviceId: id))),
-                  child: const Text('事件紀錄'))),
+                  onPressed: online
+                      ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => VideoCallPage(deviceId: id, elderName: name)))
+                      : () => toast(context, '機器人離線，無法視訊'),
+                  child: const Text('視訊通話'))),
               ]),
             ]),
           ),

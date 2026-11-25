@@ -24,6 +24,8 @@
    firebase functions:secrets:set GEMINI_KEY
    firebase functions:secrets:set LINE_CHANNEL_TOKEN
    firebase functions:secrets:set LINE_CHANNEL_SECRET
+   firebase functions:secrets:set AGORA_APP_ID        # 視訊：Agora 主控台 → 專案 → App ID
+   firebase functions:secrets:set AGORA_APP_CERT      # 視訊：同一頁的 App Certificate（只放後端）
    firebase deploy
    ```
 4. 部署完成後，終端機會列出 `api` 的網址（例如 `https://api-xxxx-de.a.run.app`），填到機器人 App「設定 → 後端網址」。

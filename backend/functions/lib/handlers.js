@@ -83,6 +83,7 @@ async function heartbeat(deps, dev, body) {
   return {
     ok: true,
     paired: (dev.data.members || []).length > 0,
+    incomingCall: await ringingCall(deps, dev),
     config: { ...configOf(dev.data), callList: await callListOf(deps, dev.data) },
     resolvedIncidents: resolved.docs.map((d) => d.id),
     ackedIncidents: acked.docs.map((d) => ({ id: d.id, by: d.data().ackByName || "家人" })),
@@ -164,6 +165,8 @@ async function route(deps, req) {
   if (method === "PATCH" && m) return patchIncident(deps, dev, m[1], body);
   if (method === "POST" && path === "/api/device/chat") return chat(deps, dev, body);
   if (method === "POST" && path === "/api/device/health") return postHealth(deps, dev, body);
+  const cm = /^\/api\/device\/calls\/([A-Za-z0-9_-]{6,80})\/(answer|decline|end)$/.exec(path);
+  if (method === "POST" && cm) return robotCall(deps, dev, cm[1], cm[2]);
   throw new HttpError(404, "沒有這個路徑");
 }
 
@@ -332,6 +335,73 @@ async function deleteMyAccount(deps, uid) {
   await audit(deps, uid, "deleteMyAccount", { devicesLeft: left });
   await deps.deleteAuthUser(uid);
   return { ok: true, devicesLeft: left };
+}
+
+// ------------------------------------------------------------------ 視訊通話
+function agoraCreds(deps) {
+  if (!deps.agora || !deps.agora.appId || !deps.agora.cert) throw new HttpError(503, "尚未設定視訊服務（Agora）");
+  return deps.agora;
+}
+
+/**
+ * 家人（或守護中心）打視訊給機器人：
+ *  - 平常：機器人響鈴，長輩按「接聽」才接通
+ *  - 長輩正在警報中：機器人自動接通（讓家人立刻看到現場）
+ * 用推播叫醒機器人；推播失敗時機器人下次心跳也會看到來電。
+ */
+async function startVideoCall(deps, uid, data) {
+  const user = await userOf(deps, uid);
+  const dev = await deviceFor(deps, user, data.deviceId);
+  const ag = agoraCreds(deps);
+  const open = await dev.ref.collection("incidents").where("outcome", "==", "ALERTED").get();
+  const autoAnswer = open.docs.some((d) => !d.data().resolved);
+  const staff = user.role === "guardian" || user.role === "admin";
+  const fromName = staff ? "守護中心" : (user.displayName || (dev.data.relations || {})[uid] || "家人");
+  const now = deps.now();
+  const channel = `neara-${dev.ref.id}-${now}`.slice(0, 64);
+  const ref = dev.ref.collection("calls").doc();
+  const callerUid = 1;
+  await ref.set({ from: uid, fromName, channel, status: "ringing", autoAnswer, createdAt: now, expiresAt: now + C.CALL_RING_MS });
+  const pushed = dev.data.fcmToken ? await deps.sendRobotPush(dev.data.fcmToken, { type: "call", callId: ref.id, fromName, autoAnswer: autoAnswer ? "1" : "0" }) : false;
+  await audit(deps, uid, "startVideoCall", { deviceId: dev.ref.id, callId: ref.id, autoAnswer });
+  return { callId: ref.id, appId: ag.appId, channel, uid: callerUid, token: C.agoraToken(ag.appId, ag.cert, channel, callerUid), autoAnswer, robotPushed: !!pushed };
+}
+
+/** 家人掛斷或取消。 */
+async function endVideoCall(deps, uid, data) {
+  const user = await userOf(deps, uid);
+  const dev = await deviceFor(deps, user, data.deviceId);
+  const ref = dev.ref.collection("calls").doc(String(data.callId || ""));
+  const s = await ref.get();
+  if (!s.exists) throw new HttpError(404, "找不到這通電話");
+  if (!["ended", "declined", "missed"].includes(s.data().status)) {
+    await ref.set({ status: s.data().status === "ringing" ? "missed" : "ended", endedAt: deps.now(), endedBy: uid }, { merge: true });
+  }
+  return { ok: true };
+}
+
+/** 機器人接聽／拒接／掛斷。接聽時回傳加入頻道需要的憑證。 */
+async function robotCall(deps, dev, callId, action) {
+  const ref = dev.ref.collection("calls").doc(callId);
+  const s = await ref.get();
+  if (!s.exists) throw new HttpError(404, "找不到這通電話");
+  const c = s.data();
+  if (action === "end") {
+    if (!["ended", "declined", "missed"].includes(c.status)) await ref.set({ status: "ended", endedAt: deps.now(), endedBy: "robot" }, { merge: true });
+    return { ok: true };
+  }
+  if (c.status !== "ringing" || c.expiresAt < deps.now()) throw new HttpError(410, "這通電話已經結束");
+  if (action === "decline") { await ref.set({ status: "declined", endedAt: deps.now() }, { merge: true }); return { ok: true }; }
+  const ag = agoraCreds(deps);
+  await ref.set({ status: "active", answeredAt: deps.now() }, { merge: true });
+  return { ok: true, appId: ag.appId, channel: c.channel, uid: C.ROBOT_UID, token: C.agoraToken(ag.appId, ag.cert, c.channel, C.ROBOT_UID), fromName: c.fromName };
+}
+
+/** 心跳時一併看有沒有還在響的來電（推播沒送到時的備援）。 */
+async function ringingCall(deps, dev) {
+  const s = await dev.ref.collection("calls").where("status", "==", "ringing").get();
+  const c = s.docs.map((d) => ({ id: d.id, ...d.data() })).filter((x) => x.expiresAt > deps.now()).sort((a, b) => b.createdAt - a.createdAt)[0];
+  return c ? { callId: c.id, fromName: c.fromName, autoAnswer: !!c.autoAnswer } : null;
 }
 
 /** 新手引導最後一步：發一則「測試警報」給自己，確認手機會響（不會通知其他人或守護中心）。每分鐘最多一次。 */
@@ -564,5 +634,5 @@ async function purgeExpired(deps, incidentsQueryOlderThan) {
 module.exports = {
   HttpError, route, authDevice, register, heartbeat, postIncident, patchIncident, chat,
   bindDevice, resolveIncident, updateDeviceConfig, createLineLinkCode, lineWebhook, onIncidentWritten, purgeExpired,
-  deleteMyAccount, sendTestAlert, postHealth, createInviteCode, updateGuardians, updateMyProfile, ackIncident, escalateDue, notifyOffline, dailySummary, notifyUsers,
+  startVideoCall, endVideoCall, robotCall, deleteMyAccount, sendTestAlert, postHealth, createInviteCode, updateGuardians, updateMyProfile, ackIncident, escalateDue, notifyOffline, dailySummary, notifyUsers,
 };

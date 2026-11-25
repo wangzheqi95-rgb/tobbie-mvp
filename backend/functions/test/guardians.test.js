@@ -219,3 +219,34 @@ test("刪除帳號：從所有機器人移除、主要監護人由下一位遞�
   await H.updateGuardians(d, "mei", { deviceId: devId, remove: "hua" }); // 小美現在有主要監護人權限
   await assert.rejects(H.deleteMyAccount(d, null), /登入/);
 });
+
+test("視訊通話：響鈴 → 機器人接聽拿到憑證；警報中自動接通；過期與掛斷", async () => {
+  const { f, d, devId, auth } = await setup();
+  await H.route(d, req("POST", "/api/device/heartbeat", { fcmToken: "robot-token" }, auth));
+  const c = await H.startVideoCall(d, "mei", { deviceId: devId });
+  assert.equal(c.autoAnswer, false, "平常要長輩按接聽");
+  assert.ok(c.token.startsWith("007") && c.appId && c.channel.startsWith("neara-"));
+  assert.deepEqual(f.sent.robot.at(-1), { token: "robot-token", data: { type: "call", callId: c.callId, fromName: "小美", autoAnswer: "0" } });
+  const hb = await H.route(d, req("POST", "/api/device/heartbeat", {}, auth));
+  assert.deepEqual(hb.incomingCall, { callId: c.callId, fromName: "小美", autoAnswer: false }, "推播沒到時心跳也看得到");
+  const ans = await H.route(d, req("POST", `/api/device/calls/${c.callId}/answer`, {}, auth));
+  assert.equal(ans.uid, 100);
+  assert.equal(ans.channel, c.channel);
+  assert.ok(ans.token.startsWith("007"));
+  assert.equal(f.store.docs.get(`devices/${devId}/calls/${c.callId}`).status, "active");
+  await assert.rejects(H.route(d, req("POST", `/api/device/calls/${c.callId}/answer`, {}, auth)), /結束/);
+  await H.endVideoCall(d, "mei", { deviceId: devId, callId: c.callId });
+  assert.equal(f.store.docs.get(`devices/${devId}/calls/${c.callId}`).status, "ended");
+
+  // 警報中：自動接通
+  await f.store.docs.set(`devices/${devId}/incidents/NEARA-v-1`, { id: "NEARA-v-1", outcome: "ALERTED", resolved: null, start: d.now() });
+  const c2 = await H.startVideoCall(d, "ming", { deviceId: devId });
+  assert.equal(c2.autoAnswer, true);
+  // 沒接：45 秒後過期
+  f.advance(46 * 1000);
+  await assert.rejects(H.route(d, req("POST", `/api/device/calls/${c2.callId}/answer`, {}, auth)), /結束/);
+  const hb2 = await H.route(d, req("POST", "/api/device/heartbeat", {}, auth));
+  assert.equal(hb2.incomingCall, null);
+  await assert.rejects(H.startVideoCall(d, "stranger", { deviceId: devId }), /沒有權限/);
+  await assert.rejects(H.startVideoCall({ ...d, agora: null }, "mei", { deviceId: devId }), /尚未設定視訊/);
+});

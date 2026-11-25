@@ -43,6 +43,8 @@ function fakeDeps(start = 1_700_000_000_000) {
       sendPush: async (tokens, msg) => { sent.push.push({ tokens, msg }); return tokens.length; },
       sendLine: async (to, text) => { sent.line.push({ to, text }); },
       deleteAuthUser: async (uid) => { sent.deletedAuth.push(uid); },
+      sendRobotPush: async (token, data) => { sent.robot = [...(sent.robot || []), { token, data }]; return true; },
+      agora: { appId: "970CA35de60c44645bbae8a215061b33", cert: "5CFd2fd1755d40ecb72977518be15d3b" },
     },
   };
 }

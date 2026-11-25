@@ -21,6 +21,8 @@ class PoseAnalyzer(ctx: Context, private val onPoses: (List<Pose>, Int, Int) -> 
     private val landmarker: PoseLandmarker = create(ctx, Delegate.GPU) ?: create(ctx, Delegate.CPU)
         ?: error("姿勢辨識模型載入失敗（assets/pose_landmarker_lite.task 不存在？）")
     @Volatile var lastBitmap: Bitmap? = null; private set
+    /** 視訊通話中：同一個鏡頭畫面也送去視訊（偵測繼續進行）。 */
+    @Volatile var frameTap: ((Bitmap) -> Unit)? = null
     private var lastTs = 0L
 
     private fun create(ctx: Context, d: Delegate): PoseLandmarker? = runCatching {
@@ -50,6 +52,7 @@ class PoseAnalyzer(ctx: Context, private val onPoses: (List<Pose>, Int, Int) -> 
             val rot = proxy.imageInfo.rotationDegrees
             val bmp = if (rot != 0) Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, Matrix().apply { postRotate(rot.toFloat()) }, true) else raw
             lastBitmap = bmp
+            frameTap?.invoke(bmp)
             var ts = SystemClock.uptimeMillis()
             if (ts <= lastTs) ts = lastTs + 1 // MediaPipe 規定時間戳要遞增
             lastTs = ts

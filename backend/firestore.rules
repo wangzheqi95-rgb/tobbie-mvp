@@ -33,6 +33,11 @@ service cloud.firestore {
           allow write: if false;
         }
       }
+      // 視訊通話狀態（響鈴中、通話中、已結束）：家人用來顯示「對方未接／已掛斷」
+      match /calls/{cid} {
+        allow read: if isStaff() || isMember(did);
+        allow write: if false;
+      }
       // 手錶等智慧裝置的資料（由機器人經後端寫入）
       match /health/{hid} {
         allow read: if isStaff() || isMember(did);

@@ -301,8 +301,11 @@ class CareController(
     }
 
     // ---------------------------------------------------------------- 主動關心聊天
+    /** 視訊通話中（不主動聊天，避免跟通話搶麥克風；跌倒偵測照常）。 */
+    @Volatile var inCall = false
+
     fun startChat(reason: String) {
-        if (state != CareState.MONITOR) return
+        if (state != CareState.MONITOR || inCall) return
         chatJob = scope.launch {
             setState(CareState.CHAT)
             lastChatAt = now()
@@ -341,6 +344,7 @@ class CareController(
         while (scope.isActive) {
             val beat = cloud.heartbeat(state.name, chassis.name, health.status, lastTalkAt)
             beat.paired?.let { ui.paired(it) }
+            beat.incoming?.let { CallBus.post(it) } // 推播沒送到時的備援
             val inc = incident
             if (state == CareState.ALERT && inc != null) {
                 beat.acked[inc.id]?.let { onAcked(inc, it) }

@@ -7,6 +7,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.media.Ringtone
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -25,6 +27,9 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.firebase.messaging.FirebaseMessaging
+import android.widget.FrameLayout
+import android.widget.Toast
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import tw.neara.core.CareState
@@ -74,6 +79,16 @@ class MainActivity : AppCompatActivity(), CareUi {
     private var isPaired: Boolean? = null
     private var flash: ValueAnimator? = null
 
+    // 視訊通話
+    private lateinit var ringLayer: View
+    private lateinit var callLayer: View
+    private lateinit var ringText: TextView
+    private lateinit var callText: TextView
+    private var videoCall: VideoCall? = null
+    private var callId: String? = null
+    private var callFrom = ""
+    private var ringtone: Ringtone? = null
+
     private val askPerms = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
         if (res[Manifest.permission.CAMERA] == true && res[Manifest.permission.RECORD_AUDIO] == true) startAll()
         else bubble("需要相機與麥克風權限才能照護長輩，請到系統設定開啟。")
@@ -97,6 +112,13 @@ class MainActivity : AppCompatActivity(), CareUi {
         infoView = findViewById(R.id.info)
         debugPairing = findViewById(R.id.debugPairing)
         overlay = findViewById(R.id.overlay)
+        ringLayer = findViewById(R.id.ringLayer)
+        callLayer = findViewById(R.id.callLayer)
+        ringText = findViewById(R.id.ringText)
+        callText = findViewById(R.id.callText)
+        findViewById<Button>(R.id.btnAnswer).setOnClickListener { callId?.let { answer(it) } }
+        findViewById<Button>(R.id.btnDecline).setOnClickListener { decline() }
+        findViewById<Button>(R.id.btnHangup).setOnClickListener { endCall(notify = true) }
 
         prefs = Prefs(this)
         voice = Voice(this, prefs)
@@ -111,6 +133,11 @@ class MainActivity : AppCompatActivity(), CareUi {
         findViewById<Button>(R.id.btnCloseDebug).setOnClickListener { debugLayer.visibility = View.GONE }
         findViewById<Button>(R.id.btnTest).setOnClickListener { if (started) { debugLayer.visibility = View.GONE; care.testFall() } }
         findViewById<Button>(R.id.btnSettings).setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
+
+        // 視訊來電：推播（FCM）或心跳都會送到這裡
+        lifecycleScope.launch { CallBus.calls.collect { onIncoming(it) } }
+        runCatching { FirebaseMessaging.getInstance().token.addOnSuccessListener { prefs.fcmToken = it } }
+            .onFailure { Log.w(CareController.TAG, "沒有 google-services.json：視訊來電改由心跳偵測（最多延遲 1 分鐘）") }
 
         lifecycleScope.launch {
             while (true) { clockView.text = SimpleDateFormat("HH:mm", Locale.TAIWAN).format(Date()); refreshIdleCaption(); delay(30_000) }
@@ -290,7 +317,62 @@ class MainActivity : AppCompatActivity(), CareUi {
         }.isSuccess
     }
 
+    // ---------------------------------------------------------------- 視訊通話
+    private fun onIncoming(c: IncomingCall) {
+        if (!started || c.callId == callId || videoCall?.active == true) return
+        callId = c.callId; callFrom = c.fromName
+        if (c.autoAnswer) { answer(c.callId); return } // 警報中：家人直接看到現場
+        ringText.text = "${c.fromName}\n想跟您視訊"
+        ringLayer.visibility = View.VISIBLE
+        ringtone = runCatching { RingtoneManager.getRingtone(this, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)) }.getOrNull()
+        ringtone?.play()
+        lifecycleScope.launch { voice.speak("${prefs.elderName.ifBlank { "您" }}，${c.fromName}打視訊來了，要接嗎？") }
+        val id = c.callId
+        lifecycleScope.launch { delay(45_000); if (callId == id && videoCall == null) stopRinging().also { callId = null } } // 45 秒沒接
+    }
+
+    private fun stopRinging() { ringtone?.stop(); ringtone = null; ringLayer.visibility = View.GONE }
+
+    private fun answer(id: String) {
+        stopRinging()
+        lifecycleScope.launch {
+            val r = cloud.callAction(id, "answer")
+            if (r == null || !r.has("token")) {
+                Toast.makeText(this@MainActivity, "這通視訊已經結束了", Toast.LENGTH_LONG).show(); callId = null; return@launch
+            }
+            voice.stopSpeaking(); voice.cancelListening()
+            val vc = VideoCall(this@MainActivity, findViewById<FrameLayout>(R.id.remoteVideo),
+                onEvent = { msg -> runOnUiThread { callText.text = "與 $callFrom 視訊中｜$msg" } },
+                onRemoteLeft = { endCall(notify = true) })
+            runCatching { vc.join(r.getString("appId"), r.getString("channel"), r.getString("token"), r.getInt("uid")) }
+                .onFailure { log("視訊無法啟動：${it.message}"); cloud.callAction(id, "end"); callId = null; return@launch }
+            videoCall = vc
+            analyzer?.frameTap = { vc.pushFrame(it) } // 同一個鏡頭畫面給視訊；跌倒偵測繼續
+            care.inCall = true
+            callText.text = "與 $callFrom 視訊中"
+            callLayer.visibility = View.VISIBLE
+        }
+    }
+
+    private fun decline() {
+        val id = callId ?: return
+        stopRinging(); callId = null
+        lifecycleScope.launch { cloud.callAction(id, "decline") }
+    }
+
+    private fun endCall(notify: Boolean) {
+        val id = callId
+        analyzer?.frameTap = null
+        videoCall?.leave(); videoCall = null
+        care.inCall = false
+        callLayer.visibility = View.GONE
+        callId = null
+        if (notify && id != null) lifecycleScope.launch { cloud.callAction(id, "end") }
+    }
+
     override fun onDestroy() {
+        endCall(notify = true)
+        stopRinging()
         flash?.cancel()
         care.stop(); voice.shutdown(); analyzer?.close(); cameraExec.shutdown()
         super.onDestroy()

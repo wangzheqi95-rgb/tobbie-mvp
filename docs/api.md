@@ -32,6 +32,8 @@
 | POST | `/api/device/incidents` | 事件 JSON（`neara.incident.v1`）＋ `snapshotJpegBase64?` | `{ok, id}` |
 | PATCH | `/api/device/incidents/{id}` | 部分欄位（outcome、end、dialog、post、resolved…） | `{ok}` |
 | POST | `/api/device/chat` | `{name, history:[{role, text}]}` | `{reply}`（AI 金鑰只在後端） |
+| POST | `/api/device/calls/{id}/answer` | — | `{appId, channel, token, uid:100, fromName}`（視訊接聽） |
+| POST | `/api/device/calls/{id}/decline`、`/end` | — | `{ok}` |
 | POST | `/api/device/health` | `{hr:[{t, bpm}], stepsToday?}`（手錶，Health Connect） | `{ok, kept}` |
 
 ## 家屬／守護中心 API（callable，需登入）
@@ -46,6 +48,10 @@
 | `resolveIncident` | 同上 | `{deviceId, incidentId, note}`：結案，機器人停止警報 |
 | `updateDeviceConfig` | 同上 | `{deviceId, elderName?, profile?}` |
 | `createLineLinkCode` | 登入者 | → `{code}`，傳給 LINE 官方帳號完成綁定 |
+| `sendTestAlert` | 該機器人的家人 | `{deviceId}`：只發給自己的測試警報，每分鐘一次 |
+| `startVideoCall` | 該機器人的家人／守護中心 | `{deviceId}` → `{callId, appId, channel, token, uid, autoAnswer}` |
+| `endVideoCall` | 同上 | `{deviceId, callId}` |
+| `deleteMyAccount` | 本人 | 從所有機器人移除（主要監護人由下一位遞補）、刪除資料、LINE 綁定與登入帳號 |
 
 ## 通知規則
 
@@ -62,6 +68,14 @@
 
 事件上多出的欄位：`escLevel, escNotified[uid], escNextAt, centerNotifiedAt, ackBy, ackByName, ackAt, vitals{hrBefore, hrAfter, source}`。
 裝置上多出的欄位：`guardianOrder[uid], relations{uid:稱謂}, memberNames{uid:名稱}, plan, integrations{healthConnect{status, lastSync}}, offlineNotified`。
+
+## 視訊通話（Agora）
+
+- 家人按「視訊通話」→ `startVideoCall` 建立 `devices/{id}/calls/{callId}`（`status: ringing`，45 秒過期），用 FCM 只帶資料的高優先推播叫醒機器人；推播失敗時機器人下次心跳的 `incomingCall` 也會看到。
+- 平常：機器人響鈴，長輩按「接聽」才接通；**長輩警報中（有未結案的 ALERTED 事件）**：機器人自動接通。
+- 機器人不讓 Agora 自己開鏡頭，而是把姿勢辨識用的同一張畫面推給 Agora（每秒最多 10 張、640 寬），所以通話中**跌倒偵測照常**。通話中不主動聊天（避免搶麥克風）；通話中跌倒時的語音詢問可能聽不到回答，會照規則進入警報。
+- 憑證（token）由後端用 App Certificate 產生，2 小時有效；機器人 uid＝100、家人 uid＝1。通話不錄影、不保存。
+- 心跳另外回傳：`paired`（有沒有家人綁定，沒有的話機器人顯示配對碼）、`incomingCall`；機器人回報 `lastTalkAt`（上次聊天）、`fcmToken`。
 
 ## 智慧裝置（目前：手錶 Health Connect）
 

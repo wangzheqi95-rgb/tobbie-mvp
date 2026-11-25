@@ -23,6 +23,8 @@ setGlobalOptions({ region: "asia-east1", maxInstances: 20 });
 const GEMINI_KEY = defineSecret("GEMINI_KEY");
 const LINE_TOKEN = defineSecret("LINE_CHANNEL_TOKEN");
 const LINE_SECRET = defineSecret("LINE_CHANNEL_SECRET");
+const AGORA_APP_ID = defineSecret("AGORA_APP_ID");      // 視訊通話（Agora 主控台 → 專案 → App ID）
+const AGORA_APP_CERT = defineSecret("AGORA_APP_CERT");  // App Certificate（只放後端）
 
 function deps() {
   return {
@@ -33,6 +35,8 @@ function deps() {
     sendPush,
     sendLine,
     deleteAuthUser: (uid) => admin.auth().deleteUser(uid),
+    sendRobotPush,
+    get agora() { try { return { appId: AGORA_APP_ID.value(), cert: AGORA_APP_CERT.value() }; } catch { return null; } },
   };
 }
 
@@ -71,6 +75,14 @@ async function sendPush(tokens, msg) {
   return res.successCount;
 }
 
+/** 叫醒機器人（視訊來電）：只帶資料、高優先，不顯示系統通知，由機器人 App 自己響鈴。 */
+async function sendRobotPush(token, data) {
+  try {
+    await admin.messaging().send({ token, data, android: { priority: "high", ttl: 45 * 1000 } });
+    return true;
+  } catch (e) { logger.warn("robot push failed", e.message); return false; }
+}
+
 async function sendLine(to, text) {
   const token = LINE_TOKEN.value();
   if (!token) return;
@@ -84,7 +96,7 @@ async function sendLine(to, text) {
 
 const asHttps = (e) => {
   if (e instanceof H.HttpError) {
-    const code = { 400: "invalid-argument", 401: "unauthenticated", 403: "permission-denied", 404: "not-found", 409: "already-exists", 429: "resource-exhausted", 503: "unavailable" }[e.status] || "internal";
+    const code = { 400: "invalid-argument", 401: "unauthenticated", 403: "permission-denied", 404: "not-found", 409: "already-exists", 410: "not-found", 429: "resource-exhausted", 503: "unavailable" }[e.status] || "internal";
     return new HttpsError(code, e.message);
   }
   logger.error(e);
@@ -92,7 +104,7 @@ const asHttps = (e) => {
 };
 
 // ---- 機器人端 HTTPS API
-exports.api = onRequest({ secrets: [GEMINI_KEY], cors: false, timeoutSeconds: 60 }, async (req, res) => {
+exports.api = onRequest({ secrets: [GEMINI_KEY, AGORA_APP_ID, AGORA_APP_CERT], cors: false, timeoutSeconds: 60 }, async (req, res) => {
   try {
     res.json(await H.route(deps(), req));
   } catch (e) {
@@ -103,7 +115,7 @@ exports.api = onRequest({ secrets: [GEMINI_KEY], cors: false, timeoutSeconds: 60
 });
 
 // ---- 家屬／守護中心（callable，需 Firebase 登入）
-const callable = (fn) => onCall(async (req) => {
+const callable = (fn, opts = {}) => onCall(opts, async (req) => {
   try { return await fn(deps(), req.auth && req.auth.uid, req.data || {}); } catch (e) { throw asHttps(e); }
 });
 exports.bindDevice = callable(H.bindDevice);
@@ -115,6 +127,8 @@ exports.updateGuardians = callable(H.updateGuardians);     // 通知順序、稱
 exports.updateMyProfile = callable(H.updateMyProfile);     // 電話、名稱、通知偏好
 exports.ackIncident = callable(H.ackIncident);             // 「我來處理」
 exports.sendTestAlert = callable(H.sendTestAlert);
+exports.startVideoCall = callable(H.startVideoCall, { secrets: [AGORA_APP_ID, AGORA_APP_CERT] }); // 視訊通話
+exports.endVideoCall = callable(H.endVideoCall);
 exports.deleteMyAccount = callable((d, uid) => H.deleteMyAccount(d, uid)); // 上架要求：App 內刪除帳號         // 新手引導：測試警報（只發給自己）
 
 // ---- LINE webhook（在 LINE Developers 後台把 Webhook URL 設為這個函式的網址）

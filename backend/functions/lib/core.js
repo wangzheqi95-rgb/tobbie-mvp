@@ -183,7 +183,18 @@ function elderProfile(input) {
   return { elder, profile: lines.join("\n") };
 }
 
+// ------------------------------------------------------------------ 視訊通話（Agora）
+const CALL_RING_MS = 45 * 1000;    // 響 45 秒沒接就算未接
+const CALL_TOKEN_SEC = 2 * 3600;   // 通話憑證 2 小時有效
+const ROBOT_UID = 100;              // 機器人在通話頻道裡的編號；家人用 1～99
+/** 產生加入 Agora 頻道的憑證（金鑰只在後端）。 */
+function agoraToken(appId, cert, channel, uid) {
+  const { RtcTokenBuilder, RtcRole } = require("agora-token");
+  return RtcTokenBuilder.buildTokenWithUid(appId, cert, channel, uid, RtcRole.PUBLISHER, CALL_TOKEN_SEC, CALL_TOKEN_SEC);
+}
+
 module.exports = {
+  CALL_RING_MS, ROBOT_UID, agoraToken,
   elderProfile,
   ESCALATE_MS, OFFLINE_MS, RELATIONS, DEFAULT_PREFS, prefsOf, guardianOrder, centerEnabled, escalationStep,
   vitalsAround, mergeHeartRate, taipeiDayStart, normalizePhone,

@@ -122,6 +122,89 @@
             android:textSize="14sp" />
     </LinearLayout>
 
+    <!-- 視訊來電響鈴 -->
+    <LinearLayout
+        android:id="@+id/ringLayer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#F010201E"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="24dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/ringText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:lineSpacingMultiplier="1.3"
+            android:textColor="#FFFFFF"
+            android:textSize="32sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnAnswer"
+            android:layout_width="match_parent"
+            android:layout_height="88dp"
+            android:layout_marginTop="40dp"
+            android:text="接聽"
+            android:textColor="#FFFFFF"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            app:backgroundTint="#2E7D4F"
+            app:cornerRadius="24dp" />
+
+        <Button
+            android:id="@+id/btnDecline"
+            android:layout_width="match_parent"
+            android:layout_height="72dp"
+            android:layout_marginTop="14dp"
+            android:text="現在不方便"
+            android:textColor="#FFFFFF"
+            android:textSize="22sp"
+            app:backgroundTint="#24403C"
+            app:cornerRadius="24dp" />
+    </LinearLayout>
+
+    <!-- 視訊通話中：全螢幕顯示家人，下方掛斷 -->
+    <FrameLayout
+        android:id="@+id/callLayer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#000000"
+        android:visibility="gone">
+
+        <FrameLayout
+            android:id="@+id/remoteVideo"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <TextView
+            android:id="@+id/callText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:background="#99000000"
+            android:gravity="center"
+            android:padding="16dp"
+            android:textColor="#FFFFFF"
+            android:textSize="22sp" />
+
+        <Button
+            android:id="@+id/btnHangup"
+            android:layout_width="match_parent"
+            android:layout_height="80dp"
+            android:layout_gravity="bottom"
+            android:layout_margin="24dp"
+            android:text="掛斷"
+            android:textColor="#FFFFFF"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            app:backgroundTint="#B3261E"
+            app:cornerRadius="24dp" />
+    </FrameLayout>
+
     <!-- 維護面板：鏡頭畫面、骨架、偵測資訊、測試按鈕、設定 -->
     <FrameLayout
         android:id="@+id/debugLayer"

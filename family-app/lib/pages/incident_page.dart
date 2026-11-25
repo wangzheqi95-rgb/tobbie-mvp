@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../util.dart';
+import 'video_call_page.dart';
 
 /// 事件報告：摘要、事件照片、問答紀錄、骨架重播、長者資料；警報中可一鍵打 119 或結案。
 class IncidentPage extends StatelessWidget {
@@ -50,6 +51,11 @@ class IncidentPage extends StatelessWidget {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(color: brandTealLight, borderRadius: BorderRadius.circular(12)),
                   child: Text('${x['ackByName'] ?? '家人'} 已接手處理（${ago(x['ackAt'] as num?)}）', style: const TextStyle(color: brandTeal, fontWeight: FontWeight.w600))),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => VideoCallPage(deviceId: deviceId, elderName: x['elderName'] ?? '長輩'))),
+                icon: const Icon(Icons.videocam_outlined), label: const Text('視訊看現場（機器人會自動接通）')),
               const SizedBox(height: 8),
               OutlinedButton(onPressed: () => _resolve(context), child: const Text('我已處理，結案（機器人會停止警報）')),
               const SizedBox(height: 4),

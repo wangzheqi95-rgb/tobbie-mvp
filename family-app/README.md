@@ -13,13 +13,19 @@
 - 事件報告上的「**我來處理**」：按下後停止往下通知，其他家人與機器人都會知道是誰在處理；顯示「已通知誰、幾分鐘後通知誰」
 - **智慧裝置**：手錶（Health Connect）連線狀態、最新心率、今天步數；事件報告附事件前後心率
 - 配色照設計稿（沉穩青綠＋米白）
+- **新手引導**三步驟、首頁長輩卡片、底部選單（長輩／通知／裝置／我的）、長輩資料表單、傳送測試警報
+- **視訊通話**（Agora）：首頁「視訊通話」、警報中「視訊看現場」（機器人自動接通）
+- 「我的」：服務條款、隱私權政策、刪除帳號
 
 ## 建置
 
 1. 安裝 Flutter（https://docs.flutter.dev/get-started/install）。
 2. 在這個資料夾執行 `flutter create --platforms=android,ios --org tw.neara .`（補上 android/ios 專案外殼，不會覆蓋 lib/）。
-3. `dart pub global activate flutterfire_cli`，再執行 `flutterfire configure`，選 Neara 的 Firebase 專案 → 會產生 `lib/firebase_options.dart`。
-4. `flutter run`。
+3. 視訊需要的權限（`flutter create` 之後加）：
+   - `android/app/src/main/AndroidManifest.xml`：`CAMERA`、`RECORD_AUDIO`、`MODIFY_AUDIO_SETTINGS`、`INTERNET`
+   - `ios/Runner/Info.plist`：`NSCameraUsageDescription`、`NSMicrophoneUsageDescription`（寫「視訊通話時讓長輩看到你、聽到你」）
+4. `dart pub global activate flutterfire_cli`，再執行 `flutterfire configure`，選 Neara 的 Firebase 專案 → 會產生 `lib/firebase_options.dart`。
+5. `flutter run`（條款網址預設 `https://neara-prod.web.app`，Firebase 專案名稱不同時加 `--dart-define=NEARA_WEB=https://你的專案.web.app`）。
 
 > 注意：這個環境裝不了 Flutter，**家屬 App 還沒有編譯過**。第一次 `flutter run` 如果有錯誤，把訊息貼給我修。
 

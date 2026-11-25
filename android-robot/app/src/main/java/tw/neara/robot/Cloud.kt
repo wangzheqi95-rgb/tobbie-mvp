@@ -50,7 +50,7 @@ class Cloud(private val prefs: Prefs, private val filesDir: File) {
     }
 
     /** 心跳結果：被遠端結案的事件、被家人按「我來處理」的事件（事件 ID → 誰）。 */
-    data class Beat(val resolved: List<String> = emptyList(), val acked: Map<String, String> = emptyMap(), val paired: Boolean? = null)
+    data class Beat(val resolved: List<String> = emptyList(), val acked: Map<String, String> = emptyMap(), val paired: Boolean? = null, val incoming: IncomingCall? = null)
 
     /** 撥號清單（依監護人順序）：名字＋電話。 */
     fun callList(): List<Pair<String, String>> = runCatching {
@@ -78,8 +78,15 @@ class Cloud(private val prefs: Prefs, private val filesDir: File) {
                 List(ids?.length() ?: 0) { ids!!.getString(it) },
                 (0 until (acks?.length() ?: 0)).associate { acks!!.getJSONObject(it).let { o -> o.optString("id") to o.optString("by", "家人") } },
                 if (r.has("paired")) r.optBoolean("paired") else null,
+                r.optJSONObject("incomingCall")?.let { IncomingCall(it.optString("callId"), it.optString("fromName", "家人"), it.optBoolean("autoAnswer")) },
             )
         }.onFailure { lastError = it.message }.getOrDefault(Beat())
+    }
+
+    /** 視訊來電：answer 接聽（回傳 appId、channel、token、uid）／decline 拒接／end 掛斷。 */
+    suspend fun callAction(callId: String, action: String): JSONObject? = withContext(Dispatchers.IO) {
+        if (!enabled || prefs.deviceKey == null) return@withContext null
+        runCatching { req("POST", "/api/device/calls/$callId/$action", "{}") }.onFailure { lastError = it.message }.getOrNull()
     }
 
     /** 上傳手錶資料（心率樣本、今天步數）。 */
