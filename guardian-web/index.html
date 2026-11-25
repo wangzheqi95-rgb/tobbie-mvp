@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neara 守護中心</title>
+<style>
+  :root { --bg:#f6f7f9; --panel:#fff; --line:#e3e6eb; --text:#1b1f24; --muted:#5f6b7a; --red:#d93025; --red-bg:#fdecea; --amber:#b06000; --amber-bg:#fef4e5; --green:#188038; --green-bg:#e6f4ea; --blue:#1a73e8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111418; --panel:#1a1e24; --line:#2c323a; --text:#e8eaed; --muted:#9aa4b1; --red-bg:#3b1715; --amber-bg:#3a2a10; --green-bg:#12301c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; align-items:center; gap:12px; padding:12px 20px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  header h1 { font-size:18px; margin:0; flex:1; }
+  .pill { font-size:12px; padding:3px 10px; border-radius:999px; background:var(--bg); color:var(--muted); }
+  main { display:grid; grid-template-columns: 380px 1fr; gap:16px; padding:16px 20px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  .card h2 { font-size:14px; margin:0; padding:12px 14px; border-bottom:1px solid var(--line); color:var(--muted); display:flex; justify-content:space-between; }
+  .list { max-height: calc(100vh - 140px); overflow:auto; }
+  .item { padding:10px 14px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .item:hover, .item.sel { background:var(--bg); }
+  .item .top { display:flex; justify-content:space-between; gap:8px; font-weight:600; }
+  .item .sub { color:var(--muted); font-size:13px; margin-top:2px; }
+  .tag { font-size:12px; padding:2px 8px; border-radius:6px; white-space:nowrap; font-weight:600; }
+  .t-alert { background:var(--red-bg); color:var(--red); }
+  .t-pending { background:var(--amber-bg); color:var(--amber); }
+  .t-ok { background:var(--green-bg); color:var(--green); }
+  .t-done { background:var(--bg); color:var(--muted); }
+  .detail { padding:16px; }
+  .detail h3 { margin:18px 0 8px; font-size:15px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  td { border-bottom:1px solid var(--line); padding:7px 6px; vertical-align:top; }
+  td:first-child { color:var(--muted); width:150px; }
+  img.snap { max-width:100%; max-height:280px; border-radius:8px; }
+  canvas { background:#0b0d10; border-radius:8px; width:100%; max-width:420px; }
+  textarea { width:100%; min-height:70px; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--text); font:inherit; }
+  button { font:inherit; padding:8px 16px; border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--text); cursor:pointer; }
+  button.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
+  button.danger { background:var(--red); border-color:var(--red); color:#fff; }
+  .muted { color:var(--muted); }
+  .empty { padding:40px; text-align:center; color:var(--muted); }
+  #login { max-width:360px; margin:12vh auto; padding:24px; }
+  #login input { width:100%; padding:10px; margin:6px 0 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--text); font:inherit; }
+  .banner { margin:12px 20px 0; padding:10px 14px; border-radius:8px; background:var(--red); color:#fff; font-weight:600; display:none; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+</style>
+</head>
+<body>
+<div id="login" class="card" style="display:none">
+  <h2 style="border:0;padding:0 0 12px;font-size:18px;color:var(--text)">Neara 守護中心 登入</h2>
+  <label>Email<input id="email" type="email" autocomplete="username"></label>
+  <label>密碼<input id="pw" type="password" autocomplete="current-password"></label>
+  <button class="primary" id="btnLogin" style="width:100%">登入</button>
+  <p class="muted" id="loginMsg" style="font-size:13px"></p>
+</div>
+
+<div id="app" style="display:none">
+  <header>
+    <h1>Neara 守護中心</h1>
+    <span class="pill" id="who"></span>
+    <span class="pill" id="clock"></span>
+    <button id="btnSound">開啟警報音</button>
+    <button id="btnLogout">登出</button>
+  </header>
+  <div class="banner" id="banner"></div>
+  <main>
+    <section class="card">
+      <h2><span>事件</span><span id="count"></span></h2>
+      <div class="list" id="list"><div class="empty">載入中…</div></div>
+    </section>
+    <section class="card">
+      <h2><span>事件詳情</span><span id="devStatus"></span></h2>
+      <div class="detail" id="detail"><div class="empty">請從左邊選一個事件</div></div>
+    </section>
+  </main>
+</div>
+
+<script src="config.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

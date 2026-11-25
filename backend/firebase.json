@@ -1,0 +1,13 @@
+{
+  "functions": [{ "source": "functions", "codebase": "default", "ignore": ["node_modules", "test", ".git"] }],
+  "firestore": { "rules": "firestore.rules", "indexes": "firestore.indexes.json", "location": "asia-east1" },
+  "storage": { "rules": "storage.rules" },
+  "hosting": {
+    "public": "../guardian-web",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**", "README.md"],
+    "headers": [{ "source": "**", "headers": [
+      { "key": "X-Frame-Options", "value": "DENY" },
+      { "key": "Referrer-Policy", "value": "no-referrer" }
+    ] }]
+  }
+}

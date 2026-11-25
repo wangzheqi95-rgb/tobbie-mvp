@@ -1,0 +1,13 @@
+rules_version = '2';
+// 事件照片與骨架：只有該裝置的家屬、守護中心、管理員能讀；任何人都不能從前端寫入（由 Cloud Functions 寫）。
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /incidents/{did}/{file} {
+      allow read: if request.auth != null && (
+        request.auth.uid in firestore.get(/databases/(default)/documents/devices/$(did)).data.members
+        || firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['guardian', 'admin']
+      );
+      allow write: if false;
+    }
+  }
+}

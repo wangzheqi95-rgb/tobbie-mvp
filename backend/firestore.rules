@@ -1,0 +1,49 @@
+rules_version = '2';
+// 原則：所有寫入都經過 Cloud Functions（伺服器驗證）；前端只能讀「自己被授權的資料」，
+// 以及修改自己的推播 token、顯示名稱。角色（family／guardian／admin）只能由管理員設定。
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function signedIn() { return request.auth != null; }
+    function me() { return get(/databases/$(db)/documents/users/$(request.auth.uid)).data; }
+    function isStaff() {
+      return signedIn() && exists(/databases/$(db)/documents/users/$(request.auth.uid)) && me().role in ['guardian', 'admin'];
+    }
+    function isMember(did) {
+      return signedIn() && request.auth.uid in get(/databases/$(db)/documents/devices/$(did)).data.members;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isStaff());
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['fcmTokens', 'displayName', 'phone']);
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmTokens', 'displayName', 'phone']);
+    }
+
+    match /devices/{did} {
+      // 用 resource.data 判斷，家屬 App 的「where members arrayContains 我」查詢才能通過規則
+      allow read: if isStaff() || (signedIn() && request.auth.uid in resource.data.members);
+      allow write: if false;
+      match /incidents/{iid} {
+        allow read: if isStaff() || isMember(did);
+        allow write: if false;
+        match /notifications/{nid} {
+          allow read: if isStaff() || isMember(did);
+          allow write: if false;
+        }
+      }
+    }
+
+    // 守護中心跨裝置查詢（collection group）
+    match /{path=**}/incidents/{iid} {
+      allow read: if isStaff();
+    }
+
+    match /pairingCodes/{c} { allow read, write: if false; }
+    match /lineLinks/{c} { allow read, write: if false; }
+    match /auditLogs/{a} {
+      allow read: if signedIn() && exists(/databases/$(db)/documents/users/$(request.auth.uid)) && me().role == 'admin';
+      allow write: if false;
+    }
+  }
+}
