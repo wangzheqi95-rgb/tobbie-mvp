@@ -98,7 +98,12 @@ const tagOf = (x) => isOpenAlert(x) ? ["t-alert", "警報中"] : x.resolved ? ["
 
 function renderList() {
   const open = items.filter(isOpenAlert).length;
-  $("count").textContent = `${items.length} 筆｜警報中 ${open}`;
+  const pending = items.filter((x) => x.outcome === "PENDING" && !x.resolved).length;
+  $("count").textContent = `最近 ${items.length} 筆`;
+  $("pAlert").textContent = `警報中 ${open}`;
+  $("pPending").textContent = `確認中 ${pending}`;
+  $("navBadge").style.display = open ? "inline" : "none";
+  $("navBadge").textContent = open;
   const b = $("banner");
   b.style.display = open ? "block" : "none";
   b.textContent = open ? `⚠ 有 ${open} 筆警報尚未處理` : "";
@@ -112,7 +117,7 @@ function renderList() {
   const sorted = [...items].sort((a, b) => (isOpenAlert(b) - isOpenAlert(a)) || (b.start - a.start));
   $("list").innerHTML = sorted.map((x) => {
     const [cls, label] = tagOf(x);
-    return `<div class="item ${selected && selected.id === x.id ? "sel" : ""}" data-id="${esc(x.id)}">
+    return `<div class="item ${isOpenAlert(x) ? "alert" : ""} ${selected && selected.id === x.id ? "sel" : ""}" data-id="${esc(x.id)}">
       <div class="top"><span>${esc(x.elderName || x._deviceId)}</span><span class="tag ${cls}">${label}</span></div>
       <div class="sub">${esc(x.reasonLabel || x.reason)}｜${fmt(x.start)}（${ago(x.start)}）</div>
       ${isOpenAlert(x) ? `<div class="sub" style="color:${x.ackAt ? "#1F6F66" : "#B3261E"}">${esc(escText(x, devCache[x._deviceId]))}</div>` : ""}</div>`;
@@ -137,7 +142,7 @@ async function select(x) {
   const [cls, label] = tagOf(x);
   const gap = x.lastWell ? Math.round((x.start - x.lastWell) / 1000) : null;
   d.innerHTML = `
-    <div class="row"><span class="tag ${cls}" style="font-size:14px">${label}</span><b style="font-size:18px">${esc(x.elderName || "")}</b><span class="muted">${esc(x.id)}</span></div>
+    <div class="row"><span class="tag ${cls}" style="font-size:14px">${label}</span><b style="font-size:22px">${esc(x.elderName || "")}</b><span class="muted">${esc(x.id)}</span></div>
     <h3>事件摘要</h3>
     <table>
       <tr><td>事件時間</td><td>${fmt(x.start)}（${ago(x.start)}）</td></tr>
@@ -221,7 +226,7 @@ async function main() {
     if (unsub) { unsub(); unsub = null; }
     if (!u) { $("app").style.display = "none"; $("login").style.display = "block"; return; }
     if (!["guardian", "admin"].includes(u.role)) { $("login").style.display = "block"; $("app").style.display = "none"; $("loginMsg").textContent = "這個帳號沒有守護中心權限，請聯絡管理員。"; src.logout(); return; }
-    $("login").style.display = "none"; $("app").style.display = "block";
+    $("login").style.display = "none"; $("app").style.display = "grid";
     $("who").textContent = `${u.displayName || u.email}（${u.role === "admin" ? "管理員" : "守護中心"}）`;
     unsub = src.watchIncidents((list) => {
       items = list;

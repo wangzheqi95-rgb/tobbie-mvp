@@ -4,44 +4,67 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Neara 守護中心</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#f6f7f9; --panel:#fff; --line:#e3e6eb; --text:#1b1f24; --muted:#5f6b7a; --red:#d93025; --red-bg:#fdecea; --amber:#b06000; --amber-bg:#fef4e5; --green:#188038; --green-bg:#e6f4ea; --blue:#1a73e8; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#111418; --panel:#1a1e24; --line:#2c323a; --text:#e8eaed; --muted:#9aa4b1; --red-bg:#3b1715; --amber-bg:#3a2a10; --green-bg:#12301c; } }
+  /* 配色照設計稿：沉穩青綠＋溫暖米白 */
+  :root { --bg:#FBF8F3; --panel:#fff; --line:#E6E0D6; --text:#1D2B2A; --muted:#5B6B68; --teal:#1F6F66; --teal-bg:#E3F1EE; --side:#10201E;
+          --red:#B3261E; --red-bg:#FDECEA; --amber:#8A5A00; --amber-bg:#FFF1D6; --green:#2E7D4F; --green-bg:#E6F4EA; }
   * { box-sizing: border-box; }
-  body { margin:0; font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif; background:var(--bg); color:var(--text); }
-  header { display:flex; align-items:center; gap:12px; padding:12px 20px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
-  header h1 { font-size:18px; margin:0; flex:1; }
-  .pill { font-size:12px; padding:3px 10px; border-radius:999px; background:var(--bg); color:var(--muted); }
-  main { display:grid; grid-template-columns: 380px 1fr; gap:16px; padding:16px 20px; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; }
-  .card h2 { font-size:14px; margin:0; padding:12px 14px; border-bottom:1px solid var(--line); color:var(--muted); display:flex; justify-content:space-between; }
-  .list { max-height: calc(100vh - 140px); overflow:auto; }
-  .item { padding:10px 14px; border-bottom:1px solid var(--line); cursor:pointer; }
-  .item:hover, .item.sel { background:var(--bg); }
-  .item .top { display:flex; justify-content:space-between; gap:8px; font-weight:600; }
-  .item .sub { color:var(--muted); font-size:13px; margin-top:2px; }
-  .tag { font-size:12px; padding:2px 8px; border-radius:6px; white-space:nowrap; font-weight:600; }
-  .t-alert { background:var(--red-bg); color:var(--red); }
-  .t-pending { background:var(--amber-bg); color:var(--amber); }
-  .t-ok { background:var(--green-bg); color:var(--green); }
-  .t-done { background:var(--bg); color:var(--muted); }
-  .detail { padding:16px; }
-  .detail h3 { margin:18px 0 8px; font-size:15px; }
-  table { border-collapse:collapse; width:100%; font-size:14px; }
-  td { border-bottom:1px solid var(--line); padding:7px 6px; vertical-align:top; }
+  body { margin:0; font-family:"Noto Sans TC", system-ui, -apple-system, sans-serif; background:var(--bg); color:var(--text); }
+  #app { min-height:100vh; display:grid; grid-template-columns:220px minmax(0,1fr); }
+  @media (max-width: 900px) {
+    #app { grid-template-columns:1fr; }
+    aside { position:static !important; height:auto !important; flex-direction:row !important; flex-wrap:wrap; align-items:center; padding:12px 16px !important; }
+    aside .brand { padding:0 8px 0 0; font-size:17px; } aside .nav { display:none !important; }
+    aside .foot { margin-top:0 !important; flex-direction:row !important; flex-wrap:wrap; align-items:center; }
+    aside button { min-height:36px; padding:0 12px; }
+  }
+  aside { background:var(--side); color:#E3F1EE; padding:24px 16px; display:flex; flex-direction:column; gap:6px; position:sticky; top:0; height:100vh; }
+  aside .brand { font-size:20px; font-weight:700; padding:0 8px 20px; }
+  aside .nav { min-height:44px; padding:0 12px; border-radius:10px; display:flex; align-items:center; font-size:15px; color:#B9D3CE; text-decoration:none; }
+  aside .nav.on { background:var(--teal); color:#fff; font-weight:500; }
+  aside .badge { margin-left:auto; background:var(--red); color:#fff; border-radius:999px; padding:1px 8px; font-size:12px; }
+  aside .foot { margin-top:auto; display:flex; flex-direction:column; gap:8px; font-size:13px; color:#8FB8B1; padding:0 8px; }
+  aside .foot a { color:#8FB8B1; }
+  aside button { background:transparent; color:#E3F1EE; border-color:#24403C; }
+  .content { display:flex; flex-direction:column; min-width:0; }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:18px 24px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  header h1 { font-size:22px; margin:0; margin-right:12px; }
+  .pill { font-size:14px; padding:6px 12px; border-radius:999px; background:var(--teal-bg); color:var(--teal); }
+  .pill.red { background:var(--red-bg); color:#8C1D18; font-weight:700; } .pill.amber { background:var(--amber-bg); color:var(--amber); }
+  header .grow { flex:1; }
+  main { display:grid; grid-template-columns:minmax(320px,420px) minmax(0,1fr); flex:1; min-height:0; }
+  @media (max-width: 1100px) { main { grid-template-columns:1fr; } }
+  .card { background:transparent; }
+  .card h2 { font-size:14px; margin:0; padding:14px 18px 6px; color:var(--muted); display:flex; justify-content:space-between; font-weight:500; }
+  #listCard { border-right:1px solid var(--line); }
+  .list { max-height:calc(100vh - 120px); overflow:auto; padding:8px 16px 16px; display:flex; flex-direction:column; gap:10px; }
+  .item { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px; cursor:pointer; }
+  .item.alert { border:2px solid var(--red); }
+  .item:hover, .item.sel { box-shadow:0 0 0 3px var(--teal-bg); }
+  .item .top { display:flex; justify-content:space-between; gap:8px; font-weight:700; font-size:16px; }
+  .item .sub { color:var(--muted); font-size:14px; margin-top:4px; }
+  .tag { font-size:12px; padding:2px 8px; border-radius:999px; white-space:nowrap; font-weight:700; }
+  .t-alert { background:var(--red); color:#fff; } .t-pending { background:var(--amber-bg); color:var(--amber); }
+  .t-ok { background:var(--green-bg); color:var(--green); } .t-done { background:#EFEBE4; color:var(--muted); }
+  .detail { padding:16px 24px 32px; }
+  .detail h3 { margin:22px 0 8px; font-size:16px; }
+  table { border-collapse:collapse; width:100%; font-size:15px; background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  td { border-bottom:1px solid var(--line); padding:8px 10px; vertical-align:top; }
   td:first-child { color:var(--muted); width:150px; }
-  img.snap { max-width:100%; max-height:280px; border-radius:8px; }
-  canvas { background:#0b0d10; border-radius:8px; width:100%; max-width:420px; }
-  textarea { width:100%; min-height:70px; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--text); font:inherit; }
-  button { font:inherit; padding:8px 16px; border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--text); cursor:pointer; }
-  button.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
-  button.danger { background:var(--red); border-color:var(--red); color:#fff; }
+  img.snap { max-width:100%; max-height:280px; border-radius:12px; }
+  canvas { background:#142321; border-radius:12px; width:100%; max-width:420px; }
+  textarea { width:100%; min-height:80px; padding:10px; border-radius:10px; border:1px solid #D9D2C5; background:var(--bg); color:var(--text); font:inherit; }
+  button { font:inherit; min-height:44px; padding:0 18px; border-radius:12px; border:1px solid var(--line); background:var(--panel); color:var(--text); cursor:pointer; }
+  button.primary { background:var(--teal); border-color:var(--teal); color:#fff; }
+  button.danger { background:var(--red); border-color:var(--red); color:#fff; font-weight:700; }
+  button:disabled { opacity:.6; cursor:default; }
   .muted { color:var(--muted); }
   .empty { padding:40px; text-align:center; color:var(--muted); }
-  #login { max-width:360px; margin:12vh auto; padding:24px; }
-  #login input { width:100%; padding:10px; margin:6px 0 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--text); font:inherit; }
-  .banner { margin:12px 20px 0; padding:10px 14px; border-radius:8px; background:var(--red); color:#fff; font-weight:600; display:none; }
+  #login { max-width:380px; margin:12vh auto; padding:28px; background:var(--panel); border:1px solid var(--line); border-radius:18px; }
+  #login input { width:100%; padding:12px; margin:6px 0 14px; border-radius:10px; border:1px solid #D9D2C5; background:var(--bg); color:var(--text); font:inherit; }
+  .banner { margin:12px 24px 0; padding:12px 16px; border-radius:12px; background:var(--red); color:#fff; font-weight:700; display:none; }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 </style>
 </head>
@@ -55,24 +78,37 @@
 </div>
 
 <div id="app" style="display:none">
-  <header>
-    <h1>Neara 守護中心</h1>
-    <span class="pill" id="who"></span>
-    <span class="pill" id="clock"></span>
-    <button id="btnSound">開啟警報音</button>
-    <button id="btnLogout">登出</button>
-  </header>
-  <div class="banner" id="banner"></div>
-  <main>
-    <section class="card">
-      <h2><span>事件</span><span id="count"></span></h2>
-      <div class="list" id="list"><div class="empty">載入中…</div></div>
-    </section>
-    <section class="card">
-      <h2><span>事件詳情</span><span id="devStatus"></span></h2>
-      <div class="detail" id="detail"><div class="empty">請從左邊選一個事件</div></div>
-    </section>
-  </main>
+  <aside>
+    <div class="brand">Neara 守護中心</div>
+    <a class="nav on" href="#">事件佇列<span class="badge" id="navBadge" style="display:none"></span></a>
+    <div class="foot">
+      <span id="who"></span>
+      <span id="clock"></span>
+      <button id="btnSound">開啟警報音</button>
+      <button id="btnLogout">登出</button>
+      <span><a href="legal/privacy.html" target="_blank">隱私權政策</a>・<a href="legal/terms.html" target="_blank">服務條款</a></span>
+    </div>
+  </aside>
+  <div class="content">
+    <header>
+      <h1>事件佇列</h1>
+      <span class="pill red" id="pAlert">警報中 0</span>
+      <span class="pill amber" id="pPending">確認中 0</span>
+      <span class="grow"></span>
+      <span class="muted" id="count"></span>
+    </header>
+    <div class="banner" id="banner"></div>
+    <main>
+      <section class="card" id="listCard">
+        <h2><span>事件（警報中排最前）</span></h2>
+        <div class="list" id="list"><div class="empty">載入中…</div></div>
+      </section>
+      <section class="card">
+        <h2><span>事件詳情</span><span id="devStatus"></span></h2>
+        <div class="detail" id="detail"><div class="empty">請從左邊選一個事件</div></div>
+      </section>
+    </main>
+  </div>
 </div>
 
 <script src="config.js"></script>
